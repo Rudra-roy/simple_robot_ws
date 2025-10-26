@@ -1,0 +1,30 @@
+# RTAB-Map visual odometry configuration for single RealSense D435i
+
+/**:
+  ros__parameters:
+    # Frame IDs
+    frame_id: camera_link
+    odom_frame_id: odom
+    # topic_queue_size: 1
+
+    approx_sync_max_interval: 0.01
+    
+    # # Visual odometry parameters
+    Odom/Strategy: '0'  # 0=Frame-to-Map, 1=Frame-to-Frame
+    Odom/ResetCountdown: '1'
+    # Odom/GuessMotion: 'true'
+    # Odom/FillInfoData: 'true'
+    # Odom/Deskewing: 'false'
+    
+    # # Feature detection
+    # Vis/FeatureType: '6'  # 6=ORB, 8=BRISK
+    # Vis/MaxFeatures: '1000'
+    # Vis/MinInliers: '15'
+    # Vis/InlierDistance: '0.02'
+    # Vis/EstimationType: '1'  # 0=3D-3D, 1=3D-2D (PnP)
+    # Vis/MaxDepth: '5.0'
+    
+    
+    # # Publishing settings
+    # publish_tf: false  # EKF will publish the transforms, but we still publish odom topic
+    publish_null_when_lost: true  # Publish zero odometry when tracking is lost

@@ -1,0 +1,15 @@
+# Point cloud filtering parameters
+
+voxel_grid:
+  ros__parameters:
+    leaf_size: 0.05  # 5cm voxel size for downsampling
+
+radius_outlier_removal:
+  ros__parameters:
+    radius: 0.2  # Search radius
+    min_neighbors: 5  # Minimum neighbors to keep point
+
+statistical_outlier_removal:
+  ros__parameters:
+    mean_k: 50  # Number of neighbors to analyze
+    stddev_mul: 1.0  # Standard deviation multiplier threshold

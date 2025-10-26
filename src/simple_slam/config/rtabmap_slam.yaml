@@ -1,0 +1,28 @@
+# RTAB-Map SLAM configuration for single RealSense D435i
+
+/**:
+  ros__parameters:
+    # Subscription topics
+    subscribe_rgb: True
+    subscribe_depth: True
+    subscribe_rgbd: False
+    subscribe_stereo: False
+    subscribe_scan: False
+    subscribe_scan_cloud: False
+    subscribe_user_data: False
+    subscribe_odom_info: True
+    wait_imu_to_init: True
+    
+    # Frame configuration
+    frame_id: camera_link
+    map_frame_id: map
+    odom_frame_id: odom
+    publish_tf: True
+    
+    # RTAB-Map core parameters
+    Rtabmap/DetectionRate: '3'  # Process every 3nd frame for efficiency
+    Rtabmap/LoopThr: '0.02'  # Loop closure threshold
+    
+   
+    Grid/CellSize: '0.1'  # 5cm resolution
+    

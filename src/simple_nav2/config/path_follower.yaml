@@ -1,0 +1,29 @@
+# Path follower configuration
+
+/**:
+  ros__parameters:
+    # Robot frame
+    robot_frame: "camera_link"
+    
+    # Pure pursuit parameters
+    lookahead: 0.5  # Lookahead distance in meters
+    
+    # Speed control
+    approach_distance: 1.5  # Distance to goal to start slowing down
+    approach_linear_velocity: 0.2  # Speed when approaching goal
+    slow_linear_velocity: 0.5  # Speed for curved paths
+    fast_linear_velocity: 1.0  # Speed for straight paths
+    angular_velocity: 0.8  # Maximum angular velocity
+    
+    # Behavior parameters
+    rotate_in_place_start_angle: 1.4  # Angle threshold to start rotate-in-place
+    rotate_in_place_end_angle: 0.3   # Angle threshold to end rotate-in-place
+    
+    # Path analysis
+    regression_distance: 2.0  # Distance to look ahead for path curvature
+    
+    # Driving mode
+    driving_mode: "forward"  # Options: forward, backward, hybrid
+    
+    # Visualization
+    publish_target: true  # Publish target point for visualization
