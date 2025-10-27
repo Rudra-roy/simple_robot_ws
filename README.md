@@ -58,6 +58,12 @@ ros2 launch simple_nav2 nav2.launch.py
 ros2 launch simple_clouds clouds.launch.py
 ```
 
+**Point Cloud Mapping (No Odometry):**
+```bash
+ros2 launch simple_slam pointcloud_mapping.launch.py
+```
+*Uses external odometry from rosbot, generates 2D occupancy grid from 3D point clouds*
+
 ## Configuration
 
 Configuration files are located in each package's `config/` directory. Key parameters include:
