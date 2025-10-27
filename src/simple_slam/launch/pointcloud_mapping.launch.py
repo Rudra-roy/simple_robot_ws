@@ -31,6 +31,7 @@ def generate_launch_description():
         parameters=[
             os.path.join(simple_slam_dir, "config", "rtabmap_ground_filtered.yaml"),  # Use ground-filtered config
             {"use_sim_time": LaunchConfiguration("use_sim_time")},
+            {"database_path": ""},  # Don't save database
         ],
         remappings=[
             ("scan_cloud", "/rosbot/camera_depth/point_cloud"),

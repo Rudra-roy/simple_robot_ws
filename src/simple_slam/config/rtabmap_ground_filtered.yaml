@@ -24,6 +24,10 @@
     Mem/IncrementalMemory: 'true'
     Mem/InitWMWithAllNodes: 'false'
     
+    # Disable database saving
+    database_path: ''
+    Db/TargetVersion: ''
+    
     # RTAB-Map core parameters
     Rtabmap/DetectionRate: '2.0'  # Increased from 1.0 - process more frames per second
     Rtabmap/TimeThr: '0'

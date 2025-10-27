@@ -23,8 +23,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'nav2_planner_wrapper = simple_nav2_planner.nav2_planner_wrapper:main',
-            'static_tf_publisher = simple_nav2_planner.static_tf_publisher:main',
+            'hybrid_navigation_planner = simple_nav2_planner.hybrid_navigation_planner:main',
         ],
     },
 )
