@@ -118,6 +118,7 @@ class HybridNavigationPlanner(Node):
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.state_pub = self.create_publisher(String, '/planner_state', 10)
         self.path_pub = self.create_publisher(Path, '/planned_path', 10)
+        self.inflated_map_pub = self.create_publisher(OccupancyGrid, '/inflated_map', 10)
         
         # ============ Subscribers ============
         self.odom_sub = self.create_subscription(
@@ -1257,36 +1258,46 @@ class HybridNavigationPlanner(Node):
         # Inflate obstacles for safety margin
         inflated_map = self.inflate_obstacles(self.global_map, self.global_map_info)
         
-        # Run A* algorithm with inflated map (try up to 3 times with increasing inflation)
-        max_attempts = 3
+        # Run A* algorithm with inflated map (try multiple strategies)
         path_grid = None
         
-        for attempt in range(max_attempts):
-            path_grid = self.astar_search(start_grid, goal_grid, inflated_map, self.global_map_info)
-            
-            if path_grid is None or len(path_grid) == 0:
-                self.get_logger().warn(f'⚠️  A* search failed on attempt {attempt + 1}/{max_attempts}')
-                if attempt < max_attempts - 1:
-                    # Increase inflation and retry
-                    self.obstacle_inflation_radius += 0.2
-                    inflated_map = self.inflate_obstacles(self.global_map, self.global_map_info)
-                continue
-            
-            # Validate path doesn't go through obstacles in GLOBAL MAP
+        # STRATEGY 1: Try with standard inflation first
+        path_grid = self.astar_search(start_grid, goal_grid, inflated_map, self.global_map_info)
+        
+        if path_grid is not None and len(path_grid) > 0:
+            # Validate path doesn't go through obstacles in GLOBAL MAP (original, not inflated)
             if self.validate_path_clear(path_grid, self.global_map):
                 self.get_logger().info(f'✅ Path validated: clear of obstacles in global map')
-                break
             else:
-                self.get_logger().warn(f'⚠️  Path goes through obstacles! Attempt {attempt + 1}/{max_attempts}')
+                self.get_logger().warn(f'⚠️  Path goes through obstacles in original map')
                 path_grid = None
-                if attempt < max_attempts - 1:
-                    # Increase inflation and retry
-                    self.obstacle_inflation_radius += 0.3
-                    inflated_map = self.inflate_obstacles(self.global_map, self.global_map_info)
+        
+        # STRATEGY 2: If failed, try with REDUCED inflation (allows tighter passages)
+        if path_grid is None or len(path_grid) == 0:
+            self.get_logger().info('   Retrying with reduced inflation for tighter passages...')
+            original_inflation = self.obstacle_inflation_radius
+            self.obstacle_inflation_radius = max(0.3, original_inflation - 0.3)  # Reduce by 0.3m
+            inflated_map = self.inflate_obstacles(self.global_map, self.global_map_info)
+            path_grid = self.astar_search(start_grid, goal_grid, inflated_map, self.global_map_info)
+            self.obstacle_inflation_radius = original_inflation  # Restore
+            
+            if path_grid is not None and len(path_grid) > 0:
+                if self.validate_path_clear(path_grid, self.global_map):
+                    self.get_logger().info(f'✅ Path found with reduced inflation')
+                else:
+                    path_grid = None
+        
+        # STRATEGY 3: Try on original map without inflation (last resort)
+        if path_grid is None or len(path_grid) == 0:
+            self.get_logger().info('   Retrying on original map without inflation...')
+            path_grid = self.astar_search(start_grid, goal_grid, self.global_map, self.global_map_info)
+            
+            if path_grid is not None and len(path_grid) > 0:
+                self.get_logger().info(f'✅ Path found on uninflated map')
         
         if path_grid is None or len(path_grid) == 0:
-            self.get_logger().error('❌ Failed to find valid path after all attempts')
-            self.current_path = [target_point]
+            self.get_logger().error('❌ Failed to find valid path after all strategies')
+            self.current_path = []  # Empty list signals failure
             self.publish_path(self.current_path)
             return
         
@@ -1372,8 +1383,9 @@ class HybridNavigationPlanner(Node):
         inflated = occupancy_map.copy()
         height, width = occupancy_map.shape
         
-        # Calculate inflation radius in cells (use ceiling and add buffer)
-        inflation_cells = int(math.ceil(self.obstacle_inflation_radius / map_info.resolution)) + 2
+        # Calculate inflation radius in cells - don't add extra buffer
+        # The parameter already includes desired safety margin
+        inflation_cells = int(math.ceil(self.obstacle_inflation_radius / map_info.resolution))
         
         self.get_logger().info(f'🔧 Inflating obstacles by {inflation_cells} cells ({inflation_cells * map_info.resolution:.2f}m)')
         
@@ -1401,15 +1413,33 @@ class HybridNavigationPlanner(Node):
                     if inflate_x < 0 or inflate_x >= width or inflate_y < 0 or inflate_y >= height:
                         continue
                     
-                    # Mark as highly occupied - use HIGH values to ensure blocking
+                    # Mark inflated cells with value 75 (vs 100 for original obstacles)
+                    # This makes them visually distinct in RViz
                     if inflated[inflate_y, inflate_x] <= 50:
-                        # Aggressive inflation: mark all as 100 (fully blocked)
-                        inflated[inflate_y, inflate_x] = 100
+                        inflated[inflate_y, inflate_x] = 75  # Inflated region
+                    # Keep original obstacles at their higher value (usually 100)
         
         inflated_obstacles = np.sum(inflated > 50)
         self.get_logger().info(f'   Original obstacles: {original_obstacles}, After inflation: {inflated_obstacles}')
         
+        # Publish inflated map for visualization in RViz
+        self.publish_inflated_map(inflated, map_info)
+        
         return inflated
+    
+    def publish_inflated_map(self, inflated_map, map_info):
+        """
+        Publish inflated map for visualization in RViz.
+        This helps visualize what A* sees as obstacles.
+        """
+        msg = OccupancyGrid()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'map'
+        msg.info = map_info
+        msg.data = inflated_map.flatten().tolist()
+        
+        self.inflated_map_pub.publish(msg)
+        self.get_logger().info(f'📊 Published inflated map to /inflated_map topic')
     
     def validate_path_clear(self, path_grid, occupancy_map):
         """
@@ -1511,7 +1541,8 @@ class HybridNavigationPlanner(Node):
         closed_set = set()
         
         # Maximum iterations to prevent infinite loops
-        max_iterations = width * height // 4
+        # Use more generous limit for larger maps or complex paths
+        max_iterations = min(width * height, 200000)  # Cap at 200k iterations
         iterations = 0
         
         # A* main loop

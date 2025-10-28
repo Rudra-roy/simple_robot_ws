@@ -38,7 +38,7 @@ def generate_launch_description():
     
     inflation_radius_arg = DeclareLaunchArgument(
         'obstacle_inflation_radius',
-        default_value='0.8',
+        default_value='0.5',
         description='Safety margin around obstacles (meters)'
     )
     
