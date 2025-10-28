@@ -106,8 +106,6 @@ class HybridNavigationPlanner(Node):
         self.survey_start_yaw = None
         self.survey_total_rotation = 0.0  # Accumulated rotation during survey
         self.survey_last_yaw = None  # Last yaw reading for incremental tracking
-        self.survey_snapshots = []  # Store costmap snapshots during rotation
-        self.aggregated_survey_map = None
         
         # ============ Path Planning Data ============
         self.current_path = []  # List of waypoints from A*
@@ -162,14 +160,6 @@ class HybridNavigationPlanner(Node):
         """Receive local costmap for obstacle detection."""
         self.costmap = np.array(msg.data).reshape((msg.info.height, msg.info.width))
         self.costmap_info = msg.info
-        
-        # Store snapshot during survey
-        if self.state == PlannerState.SURVEYING:
-            self.survey_snapshots.append({
-                'costmap': self.costmap.copy(),
-                'robot_yaw': self.current_yaw,
-                'info': msg.info
-            })
     
     def map_callback(self, msg: OccupancyGrid):
         """Receive global map from rtabmap for A* planning."""
@@ -474,14 +464,16 @@ class HybridNavigationPlanner(Node):
         return True
     
     def execute_surveying(self):
-        """SURVEYING state - rotate 360° to gather obstacle data."""
+        """
+        SURVEYING state - rotate 360° to help rtabmap update the global /map.
+        No map aggregation needed - we only use the global map from /map topic.
+        """
         if self.survey_start_yaw is None:
             # Just started survey, record starting angle and total rotation
             self.survey_start_yaw = self.current_yaw
             self.survey_total_rotation = 0.0
             self.survey_last_yaw = self.current_yaw
-            self.survey_snapshots = []
-            self.get_logger().info(f'📡 Starting 360° survey at yaw={self.current_yaw:.2f}')
+            self.get_logger().info(f'📡 Starting 360° survey to update global map...')
         
         # Calculate incremental rotation since last update
         delta_yaw = normalize_angle(self.current_yaw - self.survey_last_yaw)
@@ -491,11 +483,8 @@ class HybridNavigationPlanner(Node):
         # Check if completed full rotation (360° = 2*pi)
         if self.survey_total_rotation >= 2 * math.pi - 0.1:  # Allow small tolerance
             self.stop_robot()
-            self.get_logger().info(f'✅ Survey complete! Rotated {self.survey_total_rotation:.2f} rad ({math.degrees(self.survey_total_rotation):.1f}°)')
-            self.get_logger().info(f'   Collected {len(self.survey_snapshots)} snapshots')
-            
-            # Aggregate all survey data
-            self.aggregate_survey_data()
+            self.get_logger().info(f'✅ Survey complete! Rotated {math.degrees(self.survey_total_rotation):.1f}°')
+            self.get_logger().info(f'   Global /map should now be updated by rtabmap')
             
             # Transition to local avoidance with path planning
             self.transition_to_local_avoidance()
@@ -513,36 +502,6 @@ class HybridNavigationPlanner(Node):
         self.survey_start_yaw = None
         self.survey_total_rotation = 0.0
         self.survey_last_yaw = None
-        self.survey_snapshots = []
-        self.aggregated_survey_map = None
-    
-    def aggregate_survey_data(self):
-        """
-        Aggregate all costmap snapshots from 360° rotation into single map.
-        Takes the maximum occupancy value at each cell across all snapshots.
-        """
-        if len(self.survey_snapshots) == 0:
-            self.get_logger().warn('⚠️  No survey snapshots to aggregate!')
-            return
-        
-        # Use the most recent costmap info
-        template = self.survey_snapshots[-1]['costmap']
-        aggregated = np.zeros_like(template, dtype=np.int8)
-        
-        # Take maximum occupancy across all snapshots (most conservative)
-        for snapshot in self.survey_snapshots:
-            aggregated = np.maximum(aggregated, snapshot['costmap'])
-        
-        self.aggregated_survey_map = aggregated
-        
-        # Count occupied cells for logging
-        occupied_cells = np.sum(aggregated > 50)
-        total_cells = aggregated.size
-        occupancy_percent = (occupied_cells / total_cells) * 100
-        
-        self.get_logger().info(f'📊 Aggregated survey map:')
-        self.get_logger().info(f'   Occupied cells: {occupied_cells} ({occupancy_percent:.1f}%)')
-        self.get_logger().info(f'   Map size: {aggregated.shape}')
     
     def execute_local_avoidance(self):
         """LOCAL_AVOIDANCE state - follow A* path to clearance waypoint."""
@@ -804,13 +763,13 @@ class HybridNavigationPlanner(Node):
         Find optimal obstacle edge point (not extended beyond).
         Returns (x, y) tuple of edge point or None if not found.
         """
-        if self.aggregated_survey_map is None or self.costmap_info is None:
+        if self.global_map is None or self.global_map_info is None:
             return None
         
-        # Detect obstacle edges
+        # Detect obstacle edges from GLOBAL MAP only
         edge_points = self.detect_obstacle_edges(
-            self.aggregated_survey_map, 
-            self.costmap_info
+            self.global_map, 
+            self.global_map_info
         )
         
         if len(edge_points) == 0:
@@ -824,8 +783,8 @@ class HybridNavigationPlanner(Node):
         best_score = float('-inf')
         
         for edge_x, edge_y in edge_points:
-            # Skip if edge point itself is occupied
-            if not self.is_free_space(edge_x, edge_y, self.aggregated_survey_map, self.costmap_info, radius=0.3):
+            # Skip if edge point itself is occupied (use global map)
+            if not self.is_free_space(edge_x, edge_y, self.global_map, self.global_map_info, radius=0.3):
                 continue
             
             # Calculate score based on alignment with goal
@@ -997,13 +956,13 @@ class HybridNavigationPlanner(Node):
         Find distance to nearest obstacle from point (x, y).
         Returns distance in meters.
         """
-        if self.aggregated_survey_map is None or self.costmap_info is None:
+        if self.global_map is None or self.global_map_info is None:
             return 0.0
         
-        resolution = self.costmap_info.resolution
-        origin_x = self.costmap_info.origin.position.x
-        origin_y = self.costmap_info.origin.position.y
-        height, width = self.aggregated_survey_map.shape
+        resolution = self.global_map_info.resolution
+        origin_x = self.global_map_info.origin.position.x
+        origin_y = self.global_map_info.origin.position.y
+        height, width = self.global_map.shape
         
         # Convert to grid
         grid_x = int((x - origin_x) / resolution)
@@ -1020,7 +979,7 @@ class HybridNavigationPlanner(Node):
                     if check_x < 0 or check_x >= width or check_y < 0 or check_y >= height:
                         continue
                     
-                    if self.aggregated_survey_map[check_y, check_x] > 50:
+                    if self.global_map[check_y, check_x] > 50:
                         return math.sqrt(dx**2 + dy**2) * resolution
         
         return max_search_radius * resolution  # Max distance
@@ -1036,8 +995,8 @@ class HybridNavigationPlanner(Node):
             test_x = self.current_x + test_distance * math.cos(self.current_yaw + angle_offset)
             test_y = self.current_y + test_distance * math.sin(self.current_yaw + angle_offset)
             
-            if self.aggregated_survey_map is not None:
-                if self.is_free_space(test_x, test_y, self.aggregated_survey_map, self.costmap_info):
+            if self.global_map is not None:
+                if self.is_free_space(test_x, test_y, self.global_map, self.global_map_info):
                     return (test_x, test_y)
         
         # Last resort: point ahead of robot
