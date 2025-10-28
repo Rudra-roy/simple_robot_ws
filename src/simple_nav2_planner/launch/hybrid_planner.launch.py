@@ -36,6 +36,12 @@ def generate_launch_description():
         description='Angular speed for rotation (rad/s)'
     )
     
+    inflation_radius_arg = DeclareLaunchArgument(
+        'obstacle_inflation_radius',
+        default_value='0.8',
+        description='Safety margin around obstacles (meters)'
+    )
+    
     # Hybrid navigation planner node
     planner_node = Node(
         package='simple_nav2_planner',
@@ -47,6 +53,7 @@ def generate_launch_description():
             'obstacle_detection_radius': LaunchConfiguration('obstacle_detection_radius'),
             'linear_speed': LaunchConfiguration('linear_speed'),
             'angular_speed': LaunchConfiguration('angular_speed'),
+            'obstacle_inflation_radius': LaunchConfiguration('obstacle_inflation_radius'),
             'goal_tolerance': 0.2,
             'survey_angular_speed': 0.3,
             'clearance_margin': 2.0,
@@ -58,5 +65,6 @@ def generate_launch_description():
         obstacle_radius_arg,
         linear_speed_arg,
         angular_speed_arg,
+        inflation_radius_arg,
         planner_node,
     ])

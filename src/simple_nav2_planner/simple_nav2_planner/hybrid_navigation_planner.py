@@ -71,6 +71,7 @@ class HybridNavigationPlanner(Node):
         self.declare_parameter('goal_tolerance', 0.2)
         self.declare_parameter('survey_angular_speed', 0.3)  # rad/s for 360° rotation
         self.declare_parameter('clearance_margin', 2.0)  # meters beyond obstacle edge
+        self.declare_parameter('obstacle_inflation_radius', 0.8)  # meters for A* safety (increased from 0.5)
         
         self.obstacle_radius = self.get_parameter('obstacle_detection_radius').value
         self.linear_speed = self.get_parameter('linear_speed').value
@@ -78,6 +79,7 @@ class HybridNavigationPlanner(Node):
         self.goal_tolerance = self.get_parameter('goal_tolerance').value
         self.survey_angular_speed = self.get_parameter('survey_angular_speed').value
         self.clearance_margin = self.get_parameter('clearance_margin').value
+        self.obstacle_inflation_radius = self.get_parameter('obstacle_inflation_radius').value
         
         # ============ State Management ============
         self.state = PlannerState.IDLE
@@ -137,6 +139,7 @@ class HybridNavigationPlanner(Node):
         
         self.get_logger().info('🚀 Hybrid Navigation Planner initialized')
         self.get_logger().info(f'   Obstacle detection radius: {self.obstacle_radius}m')
+        self.get_logger().info(f'   Obstacle inflation radius: {self.obstacle_inflation_radius}m')
         self.get_logger().info(f'   Linear speed: {self.linear_speed}m/s')
         self.get_logger().info(f'   Survey angular speed: {self.survey_angular_speed}rad/s')
 
@@ -230,6 +233,13 @@ class HybridNavigationPlanner(Node):
         if self.current_pose is None or self.goal_x is None:
             return
         
+        # Safety check: ensure robot has clearance
+        if not self.check_robot_clearance():
+            self.get_logger().error('❌ Robot surrounded! Emergency stop.')
+            self.stop_robot()
+            self.state = PlannerState.IDLE
+            return
+        
         # Check if goal reached
         dist_to_goal = self.distance_to_goal()
         if dist_to_goal < self.goal_tolerance:
@@ -238,10 +248,17 @@ class HybridNavigationPlanner(Node):
             self.get_logger().info('🎉 Goal reached!')
             return
         
-        # Check for obstacles in the path
-        if self.detect_obstacle_in_radius(self.obstacle_radius):
-            self.get_logger().warn(f'⚠️  Obstacle detected within {self.obstacle_radius}m!')
-            self.get_logger().info('   Switching to SURVEYING mode')
+        # Check for obstacles in the DIRECT PATH to goal (not just radius)
+        if self.obstacle_in_direct_path():
+            # Check if this is a NEW obstacle (not in global map)
+            if self.is_new_obstacle():
+                self.get_logger().warn(f'⚠️  NEW obstacle blocking direct path!')
+                self.get_logger().info('   Switching to SURVEYING mode')
+            else:
+                self.get_logger().warn(f'⚠️  Known obstacle blocking direct path!')
+                self.get_logger().info('   Switching to SURVEYING mode')
+            
+            # Either way, do survey first before A* planning
             self.transition_to_surveying()
             return
         
@@ -310,6 +327,151 @@ class HybridNavigationPlanner(Node):
                     return True
         
         return False
+    
+    def obstacle_in_direct_path(self):
+        """
+        Check if there's an obstacle in the direct path to goal.
+        Only checks along the line from robot to goal, not full radius.
+        Returns True if path is blocked.
+        """
+        if self.costmap is None or self.costmap_info is None or self.goal_x is None:
+            return False
+        
+        # Sample points along direct line to goal
+        num_samples = int(self.distance_to_goal() / 0.2)  # Sample every 0.2m
+        num_samples = max(5, min(num_samples, 50))  # Clamp between 5-50
+        
+        for i in range(1, num_samples + 1):
+            t = i / num_samples
+            sample_x = self.current_x + t * (self.goal_x - self.current_x)
+            sample_y = self.current_y + t * (self.goal_y - self.current_y)
+            
+            # Check if this point is occupied in costmap
+            if self.is_point_occupied(sample_x, sample_y, self.costmap, self.costmap_info, threshold=50):
+                return True
+        
+        return False
+    
+    def is_new_obstacle(self):
+        """
+        Check if detected obstacle is NEW (not in global map).
+        Compares costmap obstacles with global map.
+        Returns True if obstacle is not in global map.
+        """
+        if self.global_map is None or self.global_map_info is None:
+            # No global map, assume obstacle is new
+            return True
+        
+        if self.costmap is None or self.costmap_info is None:
+            return False
+        
+        # Find obstacle cells in costmap
+        obstacle_cells = np.where(self.costmap > 50)
+        
+        if len(obstacle_cells[0]) == 0:
+            return False
+        
+        # Sample some obstacle cells (not all, for efficiency)
+        sample_indices = np.random.choice(len(obstacle_cells[0]), 
+                                         size=min(20, len(obstacle_cells[0])), 
+                                         replace=False)
+        
+        new_obstacle_count = 0
+        total_samples = len(sample_indices)
+        
+        for idx in sample_indices:
+            grid_y = obstacle_cells[0][idx]
+            grid_x = obstacle_cells[1][idx]
+            
+            # Convert to world coordinates
+            world_x = grid_x * self.costmap_info.resolution + self.costmap_info.origin.position.x
+            world_y = grid_y * self.costmap_info.resolution + self.costmap_info.origin.position.y
+            
+            # Check if this obstacle exists in global map
+            if not self.is_point_occupied(world_x, world_y, self.global_map, self.global_map_info, threshold=50):
+                new_obstacle_count += 1
+        
+        # If more than 50% of sampled obstacles are new, consider it a new obstacle
+        return (new_obstacle_count / total_samples) > 0.5
+    
+    def is_point_occupied(self, x, y, occupancy_map, map_info, threshold=50):
+        """
+        Check if a world coordinate point is occupied in given map.
+        Returns True if occupied.
+        """
+        grid_pos = self.world_to_grid(x, y, map_info)
+        if grid_pos is None:
+            return False
+        
+        grid_x, grid_y = grid_pos
+        height, width = occupancy_map.shape
+        
+        if grid_x < 0 or grid_x >= width or grid_y < 0 or grid_y >= height:
+            return False
+        
+        return occupancy_map[grid_y, grid_x] > threshold
+    
+    def check_robot_clearance(self):
+        """
+        Check if robot has at least 0.5m clearance in at least one direction.
+        Returns True if robot has escape route, False if surrounded.
+        """
+        if self.costmap is None or self.costmap_info is None:
+            return True  # No map data, assume safe
+        
+        clearance_distance = 0.5  # meters
+        resolution = self.costmap_info.resolution
+        clearance_cells = int(clearance_distance / resolution)
+        
+        # Check 8 directions: N, NE, E, SE, S, SW, W, NW
+        directions = [
+            (0, 1),    # North
+            (1, 1),    # Northeast
+            (1, 0),    # East
+            (1, -1),   # Southeast
+            (0, -1),   # South
+            (-1, -1),  # Southwest
+            (-1, 0),   # West
+            (-1, 1),   # Northwest
+        ]
+        
+        height, width = self.costmap.shape
+        origin_x = self.costmap_info.origin.position.x
+        origin_y = self.costmap_info.origin.position.y
+        
+        # Robot position in grid
+        robot_grid_x = int((self.current_x - origin_x) / resolution)
+        robot_grid_y = int((self.current_y - origin_y) / resolution)
+        
+        free_directions = 0
+        
+        for dx, dy in directions:
+            # Check if this direction is clear for clearance_distance
+            is_clear = True
+            
+            for step in range(1, clearance_cells + 1):
+                check_x = robot_grid_x + dx * step
+                check_y = robot_grid_y + dy * step
+                
+                # Check bounds
+                if check_x < 0 or check_x >= width or check_y < 0 or check_y >= height:
+                    is_clear = False
+                    break
+                
+                # Check if occupied
+                if self.costmap[check_y, check_x] > 50:
+                    is_clear = False
+                    break
+            
+            if is_clear:
+                free_directions += 1
+        
+        # Need at least 1 free direction
+        if free_directions == 0:
+            self.get_logger().warn(f'⚠️  Robot has NO clearance in any direction!')
+            return False
+        
+        return True
     
     def execute_surveying(self):
         """SURVEYING state - rotate 360° to gather obstacle data."""
@@ -387,6 +549,13 @@ class HybridNavigationPlanner(Node):
         if self.current_pose is None:
             return
         
+        # Safety check: ensure robot has clearance in at least one direction
+        if not self.check_robot_clearance():
+            self.get_logger().error('❌ Robot surrounded! Emergency stop.')
+            self.stop_robot()
+            self.state = PlannerState.IDLE
+            return
+        
         # Check if path exists
         if len(self.current_path) == 0:
             if self.replan_count >= self.max_replans:
@@ -433,17 +602,29 @@ class HybridNavigationPlanner(Node):
             self.get_logger().info(f'📍 Waypoint {self.current_waypoint_index}/{len(self.current_path)} reached')
             return
         
-        # Check for new obstacles blocking current waypoint
-        if self.detect_obstacle_in_radius(self.obstacle_radius):
-            if self.obstacle_blocks_path():
-                if self.replan_count >= self.max_replans:
-                    self.get_logger().error('❌ Max replans reached! Trying to push through...')
-                    # Don't re-survey, try to navigate anyway
-                else:
-                    self.get_logger().warn(f'⚠️  Obstacle blocking path! Replanning... ({self.replan_count + 1}/{self.max_replans})')
-                    self.replan_count += 1
-                    self.transition_to_surveying()
-                    return
+        # DYNAMIC REPLANNING: Check /costmap for NEW obstacles in upcoming path
+        if self.check_dynamic_obstacles_in_path():
+            self.get_logger().warn('🚨 Dynamic obstacle detected in path!')
+            
+            # Try to replan from current position to clearance waypoint
+            if self.clearance_waypoint is not None:
+                self.get_logger().info('   Replanning A* from current position...')
+                self.plan_astar_path_global(self.clearance_waypoint)
+                
+                # Reset waypoint index to start of new path
+                self.current_waypoint_index = 0
+                
+                if len(self.current_path) == 0:
+                    # Replanning failed
+                    if self.replan_count >= self.max_replans:
+                        self.get_logger().error('❌ Max replans reached! Emergency stop.')
+                        self.stop_robot()
+                        self.state = PlannerState.IDLE
+                    else:
+                        self.get_logger().warn('   Replan failed, re-surveying...')
+                        self.replan_count += 1
+                        self.transition_to_surveying()
+                return
         
         # Navigate to current waypoint
         cmd_vel = self.calculate_waypoint_velocity(target_waypoint)
@@ -531,6 +712,64 @@ class HybridNavigationPlanner(Node):
         
         return False
     
+    def check_dynamic_obstacles_in_path(self):
+        """
+        Check /costmap for dynamic obstacles blocking upcoming waypoints.
+        Uses current costmap (not survey map) to detect NEW obstacles.
+        Returns True if obstacle detected in next 3 waypoints.
+        """
+        if self.costmap is None or self.costmap_info is None:
+            return False
+        
+        if len(self.current_path) == 0:
+            return False
+        
+        # Check next 3 waypoints (or remaining waypoints if fewer)
+        waypoints_to_check = min(3, len(self.current_path) - self.current_waypoint_index)
+        
+        for i in range(waypoints_to_check):
+            waypoint_idx = self.current_waypoint_index + i
+            if waypoint_idx >= len(self.current_path):
+                break
+            
+            waypoint = self.current_path[waypoint_idx]
+            
+            # Convert waypoint to costmap grid coordinates
+            grid_pos = self.world_to_grid(waypoint[0], waypoint[1], self.costmap_info)
+            if grid_pos is None:
+                continue
+            
+            grid_x, grid_y = grid_pos
+            height, width = self.costmap.shape
+            
+            # Check area around waypoint (not just single cell)
+            check_radius = 3  # cells
+            for dy in range(-check_radius, check_radius + 1):
+                for dx in range(-check_radius, check_radius + 1):
+                    check_x = grid_x + dx
+                    check_y = grid_y + dy
+                    
+                    if check_x < 0 or check_x >= width or check_y < 0 or check_y >= height:
+                        continue
+                    
+                    # Check if occupied in costmap
+                    if self.costmap[check_y, check_x] > 50:
+                        # This is a dynamic obstacle - verify it's NOT in global map
+                        world_x = check_x * self.costmap_info.resolution + self.costmap_info.origin.position.x
+                        world_y = check_y * self.costmap_info.resolution + self.costmap_info.origin.position.y
+                        
+                        # If it's also in global map, it's not dynamic
+                        if self.global_map is not None:
+                            if not self.is_point_occupied(world_x, world_y, self.global_map, self.global_map_info, threshold=50):
+                                # Found dynamic obstacle!
+                                self.get_logger().info(f'   Dynamic obstacle at waypoint {waypoint_idx} ({waypoint[0]:.2f}, {waypoint[1]:.2f})')
+                                return True
+                        else:
+                            # No global map to compare, assume it's blocking
+                            return True
+        
+        return False
+    
     # ============================================================
     # UTILITY FUNCTIONS
     # ============================================================
@@ -542,28 +781,28 @@ class HybridNavigationPlanner(Node):
     
     def transition_to_local_avoidance(self):
         """Transition to LOCAL_AVOIDANCE state with clearance waypoint calculation."""
-        # Find the optimal clearance waypoint
-        self.clearance_waypoint = self.find_clearance_waypoint()
+        # Find the optimal clearance waypoint (obstacle edge point)
+        self.clearance_waypoint = self.find_obstacle_edge_waypoint()
         
         if self.clearance_waypoint is None:
-            self.get_logger().error('❌ Could not find clearance waypoint! Stopping.')
+            self.get_logger().error('❌ Could not find obstacle edge waypoint! Stopping.')
             self.stop_robot()
             self.state = PlannerState.IDLE
             return
         
-        self.get_logger().info(f'🎯 Clearance waypoint: ({self.clearance_waypoint[0]:.2f}, {self.clearance_waypoint[1]:.2f})')
+        self.get_logger().info(f'🎯 Obstacle edge waypoint: ({self.clearance_waypoint[0]:.2f}, {self.clearance_waypoint[1]:.2f})')
         
-        # Plan A* path to clearance waypoint
-        self.plan_astar_path(self.clearance_waypoint)
+        # Plan A* path to edge waypoint using GLOBAL MAP
+        self.plan_astar_path_global(self.clearance_waypoint)
         
         # Transition to local avoidance
         self.state = PlannerState.LOCAL_AVOIDANCE
         self.current_waypoint_index = 0
     
-    def find_clearance_waypoint(self):
+    def find_obstacle_edge_waypoint(self):
         """
-        Find optimal clearance waypoint beyond obstacle edges.
-        Returns (x, y) tuple or None if not found.
+        Find optimal obstacle edge point (not extended beyond).
+        Returns (x, y) tuple of edge point or None if not found.
         """
         if self.aggregated_survey_map is None or self.costmap_info is None:
             return None
@@ -580,45 +819,57 @@ class HybridNavigationPlanner(Node):
         
         self.get_logger().info(f'🔍 Found {len(edge_points)} obstacle edge points')
         
-        # Generate clearance waypoint candidates
-        candidates = []
+        # Score edge points and select best one
+        best_edge = None
+        best_score = float('-inf')
         
         for edge_x, edge_y in edge_points:
-            # Vector from robot to edge
-            dx = edge_x - self.current_x
-            dy = edge_y - self.current_y
-            edge_distance = math.sqrt(dx**2 + dy**2)
-            
-            if edge_distance < 0.1:  # Skip if too close
+            # Skip if edge point itself is occupied
+            if not self.is_free_space(edge_x, edge_y, self.aggregated_survey_map, self.costmap_info, radius=0.3):
                 continue
             
-            # Extend beyond edge by clearance margin
-            extend_factor = (edge_distance + self.clearance_margin) / edge_distance
-            clearance_x = self.current_x + dx * extend_factor
-            clearance_y = self.current_y + dy * extend_factor
+            # Calculate score based on alignment with goal
+            score = self.score_edge_point(edge_x, edge_y)
             
-            # Verify it's in free space on aggregated map
-            if not self.is_free_space(clearance_x, clearance_y, self.aggregated_survey_map, self.costmap_info, radius=0.5):
-                continue
-            
-            # Calculate score
-            score = self.score_clearance_candidate(clearance_x, clearance_y)
-            
-            candidates.append({
-                'point': (clearance_x, clearance_y),
-                'score': score,
-                'edge_point': (edge_x, edge_y)
-            })
+            if score > best_score:
+                best_score = score
+                best_edge = (edge_x, edge_y)
         
-        if len(candidates) == 0:
-            self.get_logger().warn('⚠️  No valid clearance candidates, using fallback')
+        if best_edge is None:
+            self.get_logger().warn('⚠️  No valid edge points, using fallback')
             return self.fallback_clearance_point()
         
-        # Select best candidate
-        best = max(candidates, key=lambda x: x['score'])
-        self.get_logger().info(f'✨ Selected clearance point with score: {best["score"]:.2f}')
+        self.get_logger().info(f'✨ Selected edge point with score: {best_score:.2f}')
+        return best_edge
+    
+    def score_edge_point(self, x, y):
+        """
+        Score an edge point based on:
+        - Distance to goal (closer is better)
+        - Angle alignment with goal direction (smaller deviation is better)
+        """
+        # Distance to goal
+        dist_to_goal = math.sqrt((x - self.goal_x)**2 + (y - self.goal_y)**2)
         
-        return best['point']
+        # Angle deviation from goal direction
+        goal_bearing = math.atan2(self.goal_y - self.current_y, self.goal_x - self.current_x)
+        edge_bearing = math.atan2(y - self.current_y, x - self.current_x)
+        angle_deviation = abs(normalize_angle(edge_bearing - goal_bearing))
+        
+        # Combined score (prefer closer to goal and aligned with goal direction)
+        score = (
+            -dist_to_goal * 0.5 +           # Prefer closer to goal
+            -angle_deviation * 3.0          # Strongly prefer aligned with goal
+        )
+        
+        return score
+    
+    def find_clearance_waypoint(self):
+        """
+        DEPRECATED: Old function replaced by find_obstacle_edge_waypoint.
+        Kept for compatibility but not used.
+        """
+        return self.find_obstacle_edge_waypoint()
     
     def detect_obstacle_edges(self, occupancy_map, map_info):
         """
@@ -801,50 +1052,96 @@ class HybridNavigationPlanner(Node):
         return math.sqrt((self.goal_x - self.current_x)**2 + (self.goal_y - self.current_y)**2)
     
     # ============================================================
-    # A* PATH PLANNING
+    # A* PATH PLANNING (GLOBAL MAP ONLY)
     # ============================================================
     
-    def plan_astar_path(self, target_point):
+    def plan_astar_path_global(self, target_point):
         """
-        Plan A* path from current position to target point.
-        Uses aggregated survey map (local) + global map (if available).
-        Implements dynamic replanning with multiple strategies.
-        """
-        self.get_logger().info(f'🗺️  Planning path to ({target_point[0]:.2f}, {target_point[1]:.2f})')
+        Plan A* path using GLOBAL MAP only (rtabmap's /map).
+        Validates path against global map for obstacles.
         
-        # Strategy 1: Try A* on aggregated survey map (most reliable, local data)
-        if self.aggregated_survey_map is not None and self.costmap_info is not None:
-            self.get_logger().info('   Trying A* on survey map...')
-            path = self.plan_on_map(target_point, self.aggregated_survey_map, self.costmap_info)
-            if path is not None:
-                self.current_path = path
-                self.get_logger().info(f'✅ Survey-based path: {len(path)} waypoints')
-                self.publish_path(path)
+        Args:
+            target_point: (x, y) tuple of target position
+        """
+        if self.global_map is None or self.global_map_info is None:
+            self.get_logger().error('❌ No global map available for A* planning!')
+            self.current_path = [target_point]  # Fallback: direct path
+            return
+        
+        self.get_logger().info(f'🗺️  Planning A* on GLOBAL MAP to ({target_point[0]:.2f}, {target_point[1]:.2f})')
+        
+        # Convert start and goal to grid coordinates
+        start_grid = self.world_to_grid(self.current_x, self.current_y, self.global_map_info)
+        goal_grid = self.world_to_grid(target_point[0], target_point[1], self.global_map_info)
+        
+        if start_grid is None:
+            self.get_logger().error('❌ Start position outside global map bounds!')
+            self.current_path = [target_point]
+            return
+        
+        if goal_grid is None:
+            self.get_logger().error('❌ Goal position outside global map bounds!')
+            self.current_path = [target_point]
+            return
+        
+        # Check if goal is in free space, if not find nearest free cell
+        height, width = self.global_map.shape
+        if self.global_map[goal_grid[1], goal_grid[0]] > 50:
+            self.get_logger().warn('   Goal is occupied, finding nearest free cell...')
+            goal_grid = self.find_nearest_free_cell(goal_grid, self.global_map)
+            if goal_grid is None:
+                self.get_logger().error('❌ Could not find free cell near goal')
+                self.current_path = [target_point]
                 return
         
-        # Strategy 2: Try A* on global map (broader coverage)
-        if self.global_map is not None and self.global_map_info is not None:
-            self.get_logger().info('   Trying A* on global map...')
-            path = self.plan_on_map(target_point, self.global_map, self.global_map_info)
-            if path is not None:
-                self.current_path = path
-                self.get_logger().info(f'✅ Global map path: {len(path)} waypoints')
-                self.publish_path(path)
-                return
+        # Inflate obstacles for safety margin
+        inflated_map = self.inflate_obstacles(self.global_map, self.global_map_info)
         
-        # Strategy 3: Find nearest reachable point toward goal
-        self.get_logger().warn('⚠️  A* failed, finding nearest reachable point...')
-        reachable_point = self.find_nearest_reachable_point(target_point)
+        # Run A* algorithm with inflated map (try up to 3 times with increasing inflation)
+        max_attempts = 3
+        path_grid = None
         
-        if reachable_point is not None:
-            self.current_path = [reachable_point]
-            self.get_logger().info(f'✅ Using reachable waypoint: ({reachable_point[0]:.2f}, {reachable_point[1]:.2f})')
+        for attempt in range(max_attempts):
+            path_grid = self.astar_search(start_grid, goal_grid, inflated_map, self.global_map_info)
+            
+            if path_grid is None or len(path_grid) == 0:
+                self.get_logger().warn(f'⚠️  A* search failed on attempt {attempt + 1}/{max_attempts}')
+                if attempt < max_attempts - 1:
+                    # Increase inflation and retry
+                    self.obstacle_inflation_radius += 0.2
+                    inflated_map = self.inflate_obstacles(self.global_map, self.global_map_info)
+                continue
+            
+            # Validate path doesn't go through obstacles in GLOBAL MAP
+            if self.validate_path_clear(path_grid, self.global_map):
+                self.get_logger().info(f'✅ Path validated: clear of obstacles in global map')
+                break
+            else:
+                self.get_logger().warn(f'⚠️  Path goes through obstacles! Attempt {attempt + 1}/{max_attempts}')
+                path_grid = None
+                if attempt < max_attempts - 1:
+                    # Increase inflation and retry
+                    self.obstacle_inflation_radius += 0.3
+                    inflated_map = self.inflate_obstacles(self.global_map, self.global_map_info)
+        
+        if path_grid is None or len(path_grid) == 0:
+            self.get_logger().error('❌ Failed to find valid path after all attempts')
+            self.current_path = [target_point]
             self.publish_path(self.current_path)
             return
         
-        # Strategy 4: Direct path (last resort)
-        self.get_logger().warn('⚠️  All strategies failed! Using direct path.')
-        self.current_path = [target_point]
+        # Convert grid path to world coordinates
+        path_world = []
+        for grid_pos in path_grid:
+            world_pos = self.grid_to_world(grid_pos[0], grid_pos[1], self.global_map_info)
+            path_world.append(world_pos)
+        
+        # Smooth and downsample path
+        self.current_path = self.smooth_path(path_world)
+        
+        self.get_logger().info(f'✅ A* path generated: {len(self.current_path)} waypoints')
+        
+        # Publish path for visualization
         self.publish_path(self.current_path)
     
     def plan_on_map(self, target_point, occupancy_map, map_info):
@@ -873,11 +1170,30 @@ class HybridNavigationPlanner(Node):
                 self.get_logger().warn('   Could not find free cell near goal')
                 return None
         
-        # Run A* algorithm with Octile distance heuristic
-        path_grid = self.astar_search(start_grid, goal_grid, occupancy_map, map_info)
+        # Inflate obstacles for safety margin
+        inflated_map = self.inflate_obstacles(occupancy_map, map_info)
         
-        if path_grid is None or len(path_grid) == 0:
-            return None
+        # Run A* algorithm with inflated map (try up to 3 times)
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            path_grid = self.astar_search(start_grid, goal_grid, inflated_map, map_info)
+            
+            if path_grid is None or len(path_grid) == 0:
+                return None
+            
+            # Validate path doesn't go through obstacles in ORIGINAL map
+            if self.validate_path_clear(path_grid, occupancy_map):
+                self.get_logger().info(f'✅ Path validated: clear of obstacles')
+                break
+            else:
+                self.get_logger().warn(f'⚠️  Path goes through obstacles! Attempt {attempt + 1}/{max_attempts}')
+                if attempt < max_attempts - 1:
+                    # Increase inflation and retry
+                    self.obstacle_inflation_radius += 0.2
+                    inflated_map = self.inflate_obstacles(occupancy_map, map_info)
+                else:
+                    self.get_logger().error('❌ Failed to find obstacle-free path after retries')
+                    return None
         
         # Convert grid path to world coordinates
         path_world = []
@@ -887,6 +1203,76 @@ class HybridNavigationPlanner(Node):
         
         # Smooth and downsample path
         return self.smooth_path(path_world)
+    
+    def inflate_obstacles(self, occupancy_map, map_info):
+        """
+        Inflate obstacles by safety margin to ensure paths stay away.
+        Returns inflated occupancy map.
+        """
+        inflated = occupancy_map.copy()
+        height, width = occupancy_map.shape
+        
+        # Calculate inflation radius in cells (use ceiling and add buffer)
+        inflation_cells = int(math.ceil(self.obstacle_inflation_radius / map_info.resolution)) + 2
+        
+        self.get_logger().info(f'🔧 Inflating obstacles by {inflation_cells} cells ({inflation_cells * map_info.resolution:.2f}m)')
+        
+        # Find all occupied cells
+        occupied = np.where(occupancy_map > 50)
+        original_obstacles = len(occupied[0])
+        
+        # Inflate around each occupied cell
+        for i in range(len(occupied[0])):
+            center_y = occupied[0][i]
+            center_x = occupied[1][i]
+            
+            # Inflate in circular pattern
+            for dy in range(-inflation_cells, inflation_cells + 1):
+                for dx in range(-inflation_cells, inflation_cells + 1):
+                    # Check if within inflation radius (circular)
+                    dist = math.sqrt(dx**2 + dy**2)
+                    if dist > inflation_cells:
+                        continue
+                    
+                    inflate_y = center_y + dy
+                    inflate_x = center_x + dx
+                    
+                    # Check bounds
+                    if inflate_x < 0 or inflate_x >= width or inflate_y < 0 or inflate_y >= height:
+                        continue
+                    
+                    # Mark as highly occupied - use HIGH values to ensure blocking
+                    if inflated[inflate_y, inflate_x] <= 50:
+                        # Aggressive inflation: mark all as 100 (fully blocked)
+                        inflated[inflate_y, inflate_x] = 100
+        
+        inflated_obstacles = np.sum(inflated > 50)
+        self.get_logger().info(f'   Original obstacles: {original_obstacles}, After inflation: {inflated_obstacles}')
+        
+        return inflated
+    
+    def validate_path_clear(self, path_grid, occupancy_map):
+        """
+        Validate that path doesn't go through obstacles in original map.
+        Returns True if path is clear, False if it intersects obstacles.
+        """
+        height, width = occupancy_map.shape
+        
+        for i, cell in enumerate(path_grid):
+            grid_x, grid_y = cell
+            
+            # Check bounds
+            if grid_x < 0 or grid_x >= width or grid_y < 0 or grid_y >= height:
+                self.get_logger().warn(f'   Path cell {i} out of bounds: ({grid_x}, {grid_y})')
+                return False
+            
+            # Check if cell is occupied in ORIGINAL map (threshold: 50)
+            cell_value = occupancy_map[grid_y, grid_x]
+            if cell_value > 50:
+                self.get_logger().warn(f'   Path cell {i} is OCCUPIED: value={cell_value} at ({grid_x}, {grid_y})')
+                return False
+        
+        return True
     
     def find_nearest_free_cell(self, goal_grid, occupancy_map):
         """Find nearest free cell to goal position."""
@@ -987,24 +1373,33 @@ class HybridNavigationPlanner(Node):
                    neighbor[1] < 0 or neighbor[1] >= height:
                     continue
                 
-                # Check if occupied (threshold: 50) or unknown (-1)
+                # STRICT obstacle avoidance: reject cells > 50
                 cell_value = occupancy_map[neighbor[1], neighbor[0]]
                 if cell_value > 50:
                     continue
                 
-                # Skip unknown cells unless close to goal
+                # Also check diagonal movements don't cut corners through obstacles
+                if dx != 0 and dy != 0:
+                    # Check adjacent cells for diagonal move
+                    adj1 = occupancy_map[current[1] + dy, current[0]]
+                    adj2 = occupancy_map[current[1], current[0] + dx]
+                    if adj1 > 50 or adj2 > 50:
+                        continue  # Don't cut through obstacle corners
+                
+                # Skip unknown cells unless very close to goal
                 if cell_value < 0:
                     dist_to_goal = max(abs(neighbor[0] - goal[0]), abs(neighbor[1] - goal[1]))
-                    if dist_to_goal > 5:  # Allow unknown cells close to goal
+                    if dist_to_goal > 3:  # Only allow unknown cells very close to goal
                         continue
                 
                 # Calculate cost (diagonal = sqrt(2), straight = 1)
                 move_cost = 1.414 if (dx != 0 and dy != 0) else 1.0
                 
                 # Add cost based on proximity to obstacles (prefer safer paths)
+                # Higher cost for cells closer to inflated obstacle boundary
                 obstacle_cost = 0.0
                 if cell_value > 0:
-                    obstacle_cost = cell_value / 50.0  # 0 to 2.0 range
+                    obstacle_cost = (cell_value / 50.0) * 2.0  # 0 to 2.0 range for inflated areas
                 
                 tentative_g = current_g + move_cost + obstacle_cost
                 
