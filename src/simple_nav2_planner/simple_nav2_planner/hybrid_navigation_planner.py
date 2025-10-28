@@ -1027,25 +1027,48 @@ class HybridNavigationPlanner(Node):
             self.current_path = [target_point]  # Fallback: direct path
             return
         
+        # Reset inflation radius to default before planning
+        base_inflation = self.get_parameter('obstacle_inflation_radius').value
+        self.obstacle_inflation_radius = base_inflation
+        
         self.get_logger().info(f'🗺️  Planning A* on GLOBAL MAP to ({target_point[0]:.2f}, {target_point[1]:.2f})')
+        self.get_logger().info(f'   Global map size: {self.global_map.shape}, resolution: {self.global_map_info.resolution:.3f}m')
+        
+        # Count obstacles in global map
+        occupied_cells = np.sum(self.global_map > 50)
+        free_cells = np.sum(self.global_map == 0)
+        unknown_cells = np.sum(self.global_map < 0)
+        self.get_logger().info(f'   Map stats: {occupied_cells} occupied, {free_cells} free, {unknown_cells} unknown')
         
         # Convert start and goal to grid coordinates
         start_grid = self.world_to_grid(self.current_x, self.current_y, self.global_map_info)
         goal_grid = self.world_to_grid(target_point[0], target_point[1], self.global_map_info)
         
+        self.get_logger().info(f'   Start: world({self.current_x:.2f}, {self.current_y:.2f}) -> grid{start_grid}')
+        self.get_logger().info(f'   Goal:  world({target_point[0]:.2f}, {target_point[1]:.2f}) -> grid{goal_grid}')
+        
         if start_grid is None:
             self.get_logger().error('❌ Start position outside global map bounds!')
+            self.get_logger().error(f'   Map origin: ({self.global_map_info.origin.position.x:.2f}, {self.global_map_info.origin.position.y:.2f})')
+            self.get_logger().error(f'   Map size: {width} x {height} cells')
             self.current_path = [target_point]
             return
         
         if goal_grid is None:
             self.get_logger().error('❌ Goal position outside global map bounds!')
+            self.get_logger().error(f'   Map origin: ({self.global_map_info.origin.position.x:.2f}, {self.global_map_info.origin.position.y:.2f})')
+            self.get_logger().error(f'   Map size: {width} x {height} cells')
             self.current_path = [target_point]
             return
         
+        # Check start and goal occupancy values
+        start_value = self.global_map[start_grid[1], start_grid[0]]
+        goal_value = self.global_map[goal_grid[1], goal_grid[0]]
+        self.get_logger().info(f'   Start cell value: {start_value}, Goal cell value: {goal_value}')
+        
         # Check if goal is in free space, if not find nearest free cell
         height, width = self.global_map.shape
-        if self.global_map[goal_grid[1], goal_grid[0]] > 50:
+        if goal_value > 50:
             self.get_logger().warn('   Goal is occupied, finding nearest free cell...')
             goal_grid = self.find_nearest_free_cell(goal_grid, self.global_map)
             if goal_grid is None:
@@ -1294,6 +1317,12 @@ class HybridNavigationPlanner(Node):
         """
         height, width = occupancy_map.shape
         
+        self.get_logger().info(f'🔍 A* search: start{start} -> goal{goal} on {width}x{height} grid')
+        
+        # Calculate straight-line distance
+        straight_dist = math.sqrt((goal[0] - start[0])**2 + (goal[1] - start[1])**2)
+        self.get_logger().info(f'   Straight-line distance: {straight_dist:.1f} cells ({straight_dist * map_info.resolution:.2f}m)')
+        
         # Priority queue: (f_score, counter, position, g_score)
         counter = 0
         open_set = []
@@ -1314,7 +1343,9 @@ class HybridNavigationPlanner(Node):
             
             # Check if reached goal (allow small tolerance)
             if abs(current[0] - goal[0]) <= 1 and abs(current[1] - goal[1]) <= 1:
-                return self.reconstruct_path(came_from, current)
+                path = self.reconstruct_path(came_from, current)
+                self.get_logger().info(f'✅ A* found path with {len(path)} nodes after {iterations} iterations')
+                return path
             
             # Skip if already processed
             if current in closed_set:
@@ -1345,11 +1376,9 @@ class HybridNavigationPlanner(Node):
                     if adj1 > 50 or adj2 > 50:
                         continue  # Don't cut through obstacle corners
                 
-                # Skip unknown cells unless very close to goal
-                if cell_value < 0:
-                    dist_to_goal = max(abs(neighbor[0] - goal[0]), abs(neighbor[1] - goal[1]))
-                    if dist_to_goal > 3:  # Only allow unknown cells very close to goal
-                        continue
+                # ALLOW unknown cells (< 0) - treat as free space
+                # This is important for rtabmap's global map which may have unexplored areas
+                # We rely on /costmap for dynamic obstacle detection during execution
                 
                 # Calculate cost (diagonal = sqrt(2), straight = 1)
                 move_cost = 1.414 if (dx != 0 and dy != 0) else 1.0
