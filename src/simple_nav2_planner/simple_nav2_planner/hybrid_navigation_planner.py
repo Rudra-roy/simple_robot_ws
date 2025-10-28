@@ -223,6 +223,14 @@ class HybridNavigationPlanner(Node):
         if self.current_pose is None or self.goal_x is None:
             return
         
+        # CRITICAL SAFETY CHECK: Verify robot is not in collision
+        if not self.is_robot_position_safe():
+            self.get_logger().error('❌ COLLISION DETECTED! Robot position is occupied!')
+            self.get_logger().error('   Emergency stop - possible odometry drift or actual collision')
+            self.stop_robot()
+            self.state = PlannerState.IDLE
+            return
+        
         # Safety check: ensure robot has clearance
         if not self.check_robot_clearance():
             self.get_logger().error('❌ Robot surrounded! Emergency stop.')
@@ -233,9 +241,25 @@ class HybridNavigationPlanner(Node):
         # Check if goal reached
         dist_to_goal = self.distance_to_goal()
         if dist_to_goal < self.goal_tolerance:
+            # SAFETY CHECK: Verify robot is not in collision before declaring success
+            if not self.is_robot_position_safe():
+                self.get_logger().error('⚠️  Goal reached but ROBOT IS IN COLLISION!')
+                self.get_logger().error('   Stopping immediately for safety')
+                self.stop_robot()
+                self.state = PlannerState.IDLE
+                return
+            
+            # SAFETY CHECK: Verify robot has clearance
+            if not self.check_robot_clearance():
+                self.get_logger().error('⚠️  Goal reached but robot SURROUNDED by obstacles!')
+                self.get_logger().error('   Stopping immediately for safety')
+                self.stop_robot()
+                self.state = PlannerState.IDLE
+                return
+            
             self.stop_robot()
             self.state = PlannerState.IDLE
-            self.get_logger().info('🎉 Goal reached!')
+            self.get_logger().info('🎉 Goal reached! Robot is safe and clear.')
             return
         
         # Check for obstacles in the DIRECT PATH to goal (not just radius)
@@ -267,13 +291,23 @@ class HybridNavigationPlanner(Node):
         goal_angle = math.atan2(dy, dx)
         angle_error = normalize_angle(goal_angle - self.current_yaw)
         
+        # Check for obstacles in front of robot (safety brake)
+        obstacle_ahead = self.detect_obstacle_ahead(distance=1.0)
+        
         # If angle error is large, rotate in place first
         if abs(angle_error) > 0.3:  # ~17 degrees
             cmd_vel.angular.z = self.angular_speed if angle_error > 0 else -self.angular_speed
             cmd_vel.linear.x = 0.0
         else:
             # Move forward with proportional control
-            cmd_vel.linear.x = min(self.linear_speed, goal_distance * 0.5)
+            base_speed = min(self.linear_speed, goal_distance * 0.5)
+            
+            # SAFETY: Reduce speed if obstacle detected ahead
+            if obstacle_ahead:
+                base_speed = min(base_speed, 0.1)  # Max 0.1 m/s when obstacle nearby
+                self.get_logger().warn('⚠️  Obstacle ahead - reducing speed')
+            
+            cmd_vel.linear.x = base_speed
             cmd_vel.angular.z = 2.0 * angle_error  # Proportional turning
         
         return cmd_vel
@@ -315,6 +349,58 @@ class HybridNavigationPlanner(Node):
                 # Check if occupied (threshold: 50)
                 if self.costmap[grid_y, grid_x] > 50:
                     return True
+        
+        return False
+    
+    def detect_obstacle_ahead(self, distance=1.0):
+        """
+        Detect if there's an obstacle directly in front of the robot.
+        Checks a cone in the robot's forward direction.
+        
+        Args:
+            distance: How far ahead to check (meters)
+            
+        Returns:
+            True if obstacle detected ahead, False otherwise
+        """
+        if self.costmap is None or self.costmap_info is None:
+            return False
+        
+        resolution = self.costmap_info.resolution
+        origin_x = self.costmap_info.origin.position.x
+        origin_y = self.costmap_info.origin.position.y
+        height, width = self.costmap.shape
+        
+        # Sample points along forward direction
+        num_samples = int(distance / 0.1)  # Check every 10cm
+        num_samples = max(5, min(num_samples, 20))
+        
+        for i in range(1, num_samples + 1):
+            # Point along forward direction
+            check_dist = (i / num_samples) * distance
+            check_x = self.current_x + check_dist * math.cos(self.current_yaw)
+            check_y = self.current_y + check_dist * math.sin(self.current_yaw)
+            
+            # Convert to grid
+            grid_x = int((check_x - origin_x) / resolution)
+            grid_y = int((check_y - origin_y) / resolution)
+            
+            # Check bounds
+            if grid_x < 0 or grid_x >= width or grid_y < 0 or grid_y >= height:
+                continue
+            
+            # Check if occupied
+            if self.costmap[grid_y, grid_x] > 50:
+                return True
+            
+            # Also check cells on either side (cone shape)
+            for offset in [-1, 1]:
+                side_x = grid_x + int(offset * math.sin(self.current_yaw))
+                side_y = grid_y - int(offset * math.cos(self.current_yaw))
+                
+                if 0 <= side_x < width and 0 <= side_y < height:
+                    if self.costmap[side_y, side_x] > 50:
+                        return True
         
         return False
     
@@ -400,6 +486,55 @@ class HybridNavigationPlanner(Node):
             return False
         
         return occupancy_map[grid_y, grid_x] > threshold
+    
+    def is_robot_position_safe(self):
+        """
+        Check if robot's current position is actually in free space (not in collision).
+        Checks both costmap and global map to detect if robot is inside an obstacle.
+        Returns True if safe, False if in collision.
+        """
+        # Check in costmap first (real-time obstacle data)
+        if self.costmap is not None and self.costmap_info is not None:
+            robot_grid = self.world_to_grid(self.current_x, self.current_y, self.costmap_info)
+            if robot_grid is not None:
+                grid_x, grid_y = robot_grid
+                height, width = self.costmap.shape
+                
+                # Check if robot position is occupied
+                if 0 <= grid_x < width and 0 <= grid_y < height:
+                    robot_cell_value = self.costmap[grid_y, grid_x]
+                    if robot_cell_value > 50:
+                        self.get_logger().error(f'❌ COLLISION: Robot position occupied in costmap (value: {robot_cell_value})!')
+                        return False
+                    
+                    # Check immediate surrounding cells (robot footprint)
+                    robot_radius_cells = 2  # ~0.2m radius assuming 0.05m resolution
+                    for dy in range(-robot_radius_cells, robot_radius_cells + 1):
+                        for dx in range(-robot_radius_cells, robot_radius_cells + 1):
+                            check_x = grid_x + dx
+                            check_y = grid_y + dy
+                            
+                            if 0 <= check_x < width and 0 <= check_y < height:
+                                if self.costmap[check_y, check_x] > 80:  # High threshold for footprint
+                                    dist = math.sqrt(dx**2 + dy**2) * self.costmap_info.resolution
+                                    self.get_logger().warn(f'⚠️  Obstacle detected {dist:.2fm} from robot center')
+                                    if dist < 0.15:  # Very close - likely collision
+                                        return False
+        
+        # Also check global map
+        if self.global_map is not None and self.global_map_info is not None:
+            robot_grid = self.world_to_grid(self.current_x, self.current_y, self.global_map_info)
+            if robot_grid is not None:
+                grid_x, grid_y = robot_grid
+                height, width = self.global_map.shape
+                
+                if 0 <= grid_x < width and 0 <= grid_y < height:
+                    robot_cell_value = self.global_map[grid_y, grid_x]
+                    if robot_cell_value > 50:
+                        self.get_logger().error(f'❌ COLLISION: Robot position occupied in global map (value: {robot_cell_value})!')
+                        return False
+        
+        return True
     
     def check_robot_clearance(self):
         """
@@ -508,6 +643,14 @@ class HybridNavigationPlanner(Node):
         if self.current_pose is None:
             return
         
+        # CRITICAL SAFETY CHECK: Verify robot is not in collision
+        if not self.is_robot_position_safe():
+            self.get_logger().error('❌ COLLISION DETECTED! Robot position is occupied!')
+            self.get_logger().error('   Emergency stop - possible odometry drift or actual collision')
+            self.stop_robot()
+            self.state = PlannerState.IDLE
+            return
+        
         # Safety check: ensure robot has clearance in at least one direction
         if not self.check_robot_clearance():
             self.get_logger().error('❌ Robot surrounded! Emergency stop.')
@@ -600,13 +743,23 @@ class HybridNavigationPlanner(Node):
         target_angle = math.atan2(dy, dx)
         angle_error = normalize_angle(target_angle - self.current_yaw)
         
+        # Check for obstacles in front of robot (safety brake)
+        obstacle_ahead = self.detect_obstacle_ahead(distance=0.8)
+        
         # If angle error is large, rotate first
         if abs(angle_error) > 0.4:  # ~23 degrees
             cmd_vel.angular.z = self.angular_speed if angle_error > 0 else -self.angular_speed
             cmd_vel.linear.x = 0.0
         else:
             # Move forward with steering
-            cmd_vel.linear.x = min(self.linear_speed, distance * 0.5)
+            base_speed = min(self.linear_speed, distance * 0.5)
+            
+            # SAFETY: Reduce speed if obstacle detected ahead
+            if obstacle_ahead:
+                base_speed = min(base_speed, 0.1)  # Max 0.1 m/s when obstacle nearby
+                self.get_logger().warn('⚠️  Obstacle ahead during waypoint follow - reducing speed')
+            
+            cmd_vel.linear.x = base_speed
             cmd_vel.angular.z = 2.5 * angle_error  # Proportional control
         
         return cmd_vel
@@ -739,12 +892,26 @@ class HybridNavigationPlanner(Node):
         self.cmd_vel_pub.publish(cmd)
     
     def transition_to_local_avoidance(self):
-        """Transition to LOCAL_AVOIDANCE state with clearance waypoint calculation."""
-        # Find the optimal clearance waypoint (obstacle edge point)
+        """Transition to LOCAL_AVOIDANCE state with A* path planning."""
+        self.get_logger().info('🔄 Transitioning to LOCAL_AVOIDANCE...')
+        
+        # STRATEGY 1: Try planning directly to the actual goal first
+        self.get_logger().info('   Strategy 1: Planning A* directly to goal...')
+        self.plan_astar_path_global((self.goal_x, self.goal_y))
+        
+        if len(self.current_path) > 0:
+            self.get_logger().info('✅ A* path to goal found! Using direct path.')
+            self.clearance_waypoint = (self.goal_x, self.goal_y)
+            self.state = PlannerState.LOCAL_AVOIDANCE
+            self.current_waypoint_index = 0
+            return
+        
+        # STRATEGY 2: If direct path fails, find obstacle edge waypoint
+        self.get_logger().info('   Strategy 2: Direct path failed, finding obstacle edge waypoint...')
         self.clearance_waypoint = self.find_obstacle_edge_waypoint()
         
         if self.clearance_waypoint is None:
-            self.get_logger().error('❌ Could not find obstacle edge waypoint! Stopping.')
+            self.get_logger().error('❌ Could not find any valid waypoint! Stopping.')
             self.stop_robot()
             self.state = PlannerState.IDLE
             return
@@ -753,6 +920,12 @@ class HybridNavigationPlanner(Node):
         
         # Plan A* path to edge waypoint using GLOBAL MAP
         self.plan_astar_path_global(self.clearance_waypoint)
+        
+        if len(self.current_path) == 0:
+            self.get_logger().error('❌ Failed to plan path to edge waypoint! Stopping.')
+            self.stop_robot()
+            self.state = PlannerState.IDLE
+            return
         
         # Transition to local avoidance
         self.state = PlannerState.LOCAL_AVOIDANCE
@@ -1034,6 +1207,9 @@ class HybridNavigationPlanner(Node):
         self.get_logger().info(f'🗺️  Planning A* on GLOBAL MAP to ({target_point[0]:.2f}, {target_point[1]:.2f})')
         self.get_logger().info(f'   Global map size: {self.global_map.shape}, resolution: {self.global_map_info.resolution:.3f}m')
         
+        # Get map dimensions
+        height, width = self.global_map.shape
+        
         # Count obstacles in global map
         occupied_cells = np.sum(self.global_map > 50)
         free_cells = np.sum(self.global_map == 0)
@@ -1050,15 +1226,18 @@ class HybridNavigationPlanner(Node):
         if start_grid is None:
             self.get_logger().error('❌ Start position outside global map bounds!')
             self.get_logger().error(f'   Map origin: ({self.global_map_info.origin.position.x:.2f}, {self.global_map_info.origin.position.y:.2f})')
-            self.get_logger().error(f'   Map size: {width} x {height} cells')
-            self.current_path = [target_point]
+            self.get_logger().error(f'   Map size: {width} x {height} cells ({width * self.global_map_info.resolution:.2f}m x {height * self.global_map_info.resolution:.2f}m)')
+            self.current_path = []  # Empty path signals failure
             return
         
         if goal_grid is None:
             self.get_logger().error('❌ Goal position outside global map bounds!')
             self.get_logger().error(f'   Map origin: ({self.global_map_info.origin.position.x:.2f}, {self.global_map_info.origin.position.y:.2f})')
-            self.get_logger().error(f'   Map size: {width} x {height} cells')
-            self.current_path = [target_point]
+            self.get_logger().error(f'   Map size: {width} x {height} cells ({width * self.global_map_info.resolution:.2f}m x {height * self.global_map_info.resolution:.2f}m)')
+            max_x = self.global_map_info.origin.position.x + width * self.global_map_info.resolution
+            max_y = self.global_map_info.origin.position.y + height * self.global_map_info.resolution
+            self.get_logger().error(f'   Map bounds: X[{self.global_map_info.origin.position.x:.2f}, {max_x:.2f}], Y[{self.global_map_info.origin.position.y:.2f}, {max_y:.2f}]')
+            self.current_path = []  # Empty path signals failure
             return
         
         # Check start and goal occupancy values
@@ -1067,7 +1246,6 @@ class HybridNavigationPlanner(Node):
         self.get_logger().info(f'   Start cell value: {start_value}, Goal cell value: {goal_value}')
         
         # Check if goal is in free space, if not find nearest free cell
-        height, width = self.global_map.shape
         if goal_value > 50:
             self.get_logger().warn('   Goal is occupied, finding nearest free cell...')
             goal_grid = self.find_nearest_free_cell(goal_grid, self.global_map)
