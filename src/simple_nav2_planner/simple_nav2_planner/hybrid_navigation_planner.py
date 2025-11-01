@@ -277,6 +277,9 @@ class HybridNavigationPlanner(Node):
             self.transition_to_surveying()
             return
         
+        # Publish global straight-line path for visualization
+        self.publish_global_path_to_goal()
+        
         # Navigate straight to goal
         cmd_vel = self.calculate_global_velocity()
         self.cmd_vel_pub.publish(cmd_vel)
@@ -670,6 +673,9 @@ class HybridNavigationPlanner(Node):
                 self.replan_count += 1
                 self.transition_to_surveying()
             return
+        
+        # Publish current A* path for visualization
+        self.publish_path(self.current_path, path_type="local")
         
         # Check if reached clearance waypoint (end of path)
         if self.current_waypoint_index >= len(self.current_path):
@@ -1298,7 +1304,7 @@ class HybridNavigationPlanner(Node):
         if path_grid is None or len(path_grid) == 0:
             self.get_logger().error('❌ Failed to find valid path after all strategies')
             self.current_path = []  # Empty list signals failure
-            self.publish_path(self.current_path)
+            self.publish_path(self.current_path, path_type="local")
             return
         
         # Convert grid path to world coordinates
@@ -1312,8 +1318,8 @@ class HybridNavigationPlanner(Node):
         
         self.get_logger().info(f'✅ A* path generated: {len(self.current_path)} waypoints')
         
-        # Publish path for visualization
-        self.publish_path(self.current_path)
+        # Publish path for visualization (LOCAL A* path)
+        self.publish_path(self.current_path, path_type="local")
     
     def plan_on_map(self, target_point, occupancy_map, map_info):
         """
@@ -1689,22 +1695,81 @@ class HybridNavigationPlanner(Node):
         
         return (world_x, world_y)
     
-    def publish_path(self, path_waypoints):
-        """Publish path for RViz visualization."""
+    def publish_global_path_to_goal(self):
+        """
+        Publish a straight-line path from current position to goal.
+        This represents the global planner's intended path.
+        """
+        if self.goal_x is None or self.goal_y is None:
+            return
+        
+        # Create a straight line path with intermediate waypoints
+        global_path = []
+        
+        # Calculate distance to goal
+        dx = self.goal_x - self.current_x
+        dy = self.goal_y - self.current_y
+        distance = math.sqrt(dx**2 + dy**2)
+        
+        # Create waypoints along the straight line (every 0.5m)
+        num_waypoints = max(2, int(distance / 0.5))
+        
+        for i in range(num_waypoints + 1):
+            t = i / num_waypoints  # Interpolation parameter [0, 1]
+            x = self.current_x + t * dx
+            y = self.current_y + t * dy
+            global_path.append((x, y))
+        
+        # Publish as global path
+        self.publish_path(global_path, path_type="global")
+    
+    def publish_path(self, path_waypoints, path_type="local"):
+        """
+        Publish path for RViz visualization.
+        
+        Args:
+            path_waypoints: List of (x, y) tuples representing the path
+            path_type: "global" for straight-line paths, "local" for A* paths
+        """
         path_msg = Path()
         path_msg.header.frame_id = "map"
         path_msg.header.stamp = self.get_clock().now().to_msg()
         
-        for waypoint in path_waypoints:
+        for i, waypoint in enumerate(path_waypoints):
             pose = PoseStamped()
             pose.header = path_msg.header
             pose.pose.position.x = waypoint[0]
             pose.pose.position.y = waypoint[1]
-            pose.pose.position.z = 0.0
-            pose.pose.orientation.w = 1.0
+            
+            # Set z-height based on path type for visual distinction in RViz
+            if path_type == "global":
+                pose.pose.position.z = 0.1  # Slightly elevated for global path
+            else:  # local
+                pose.pose.position.z = 0.0  # Ground level for local path
+            
+            # Calculate orientation along path direction
+            if i < len(path_waypoints) - 1:
+                next_waypoint = path_waypoints[i + 1]
+                dx = next_waypoint[0] - waypoint[0]
+                dy = next_waypoint[1] - waypoint[1]
+                yaw = math.atan2(dy, dx)
+                
+                # Convert yaw to quaternion
+                pose.pose.orientation.x = 0.0
+                pose.pose.orientation.y = 0.0
+                pose.pose.orientation.z = math.sin(yaw / 2.0)
+                pose.pose.orientation.w = math.cos(yaw / 2.0)
+            else:
+                pose.pose.orientation.w = 1.0
+            
             path_msg.poses.append(pose)
         
         self.path_pub.publish(path_msg)
+        
+        if len(path_waypoints) > 0:
+            self.get_logger().debug(
+                f'Published {path_type.upper()} path with {len(path_waypoints)} waypoints'
+            )
 
 
 def main(args=None):

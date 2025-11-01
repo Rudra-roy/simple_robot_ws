@@ -8,9 +8,19 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
+#include "nav_msgs/msg/map_meta_data.hpp"
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
+
 namespace nav2_costmap_node {
+
+// Costmap layer values
+enum class CostValues : uint8_t {
+  FREE_SPACE = 0,
+  INSCRIBED_INFLATED_OBSTACLE = 253,
+  LETHAL_OBSTACLE = 254,
+  NO_INFORMATION = 255
+};
 
 class CostmapNode : public rclcpp::Node {
  public:
@@ -19,7 +29,25 @@ class CostmapNode : public rclcpp::Node {
 
  private:
   void point_cloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+  void map_callback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
   void publish_costmap();
+  
+  // Layer processing functions
+  void update_static_layer();
+  void update_obstacle_layer(const sensor_msgs::msg::PointCloud2::SharedPtr msg,
+                             const geometry_msgs::msg::TransformStamped& pc_to_base,
+                             const geometry_msgs::msg::TransformStamped& base_to_global);
+  void update_inflation_layer();
+  void combine_layers();
+  
+  // Ray tracing for clearing free space
+  void raytrace_line(int x0, int y0, int x1, int y1, std::vector<int8_t>& layer);
+  
+  // Utility functions
+  bool world_to_map(double wx, double wy, int& mx, int& my) const;
+  void map_to_world(int mx, int my, double& wx, double& wy) const;
+  unsigned int get_index(int mx, int my) const;
+  uint8_t compute_cost(int8_t base_cost) const;
 
   // Parameters
   std::string global_frame_;
@@ -30,18 +58,37 @@ class CostmapNode : public rclcpp::Node {
   double origin_x_;
   double origin_y_;
   double inflation_radius_;
+  double cost_scaling_factor_;
+  bool track_unknown_space_;
+  bool use_static_map_;
+  double obstacle_max_range_;
+  double obstacle_min_range_;
 
   // Subscriptions and Publications
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pc_sub_;
+  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
   rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr costmap_pub_;
+  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr static_layer_pub_;
+  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr obstacle_layer_pub_;
+  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr inflation_layer_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   // TF2
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
-  // Costmap data
-  std::vector<int8_t> costmap_data_;
+  // Costmap layers
+  std::vector<int8_t> static_layer_;      // From map server
+  std::vector<int8_t> obstacle_layer_;    // From point cloud
+  std::vector<int8_t> inflation_layer_;   // Inflated obstacles
+  std::vector<int8_t> costmap_data_;      // Combined final costmap
+  
+  // Static map data
+  nav_msgs::msg::OccupancyGrid::SharedPtr static_map_;
+  bool static_map_received_;
+  
+  // Robot position for ray tracing
+  double robot_x_, robot_y_;
 };
 
 }  // namespace nav2_costmap_node

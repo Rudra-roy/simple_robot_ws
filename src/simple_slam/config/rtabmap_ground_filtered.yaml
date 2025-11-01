@@ -29,7 +29,7 @@
     Db/TargetVersion: ''
     
     # RTAB-Map core parameters
-    Rtabmap/DetectionRate: '2.0'  # Increased from 1.0 - process more frames per second
+    Rtabmap/DetectionRate: '5.0'  # Increased from 1.0 - process more frames per second
     Rtabmap/TimeThr: '0'
     Rtabmap/LoopThr: '0.11'
     Rtabmap/CreateIntermediateNodes: 'true'
@@ -44,7 +44,7 @@
     Grid/3D: 'false'
     Grid/CellSize: '0.05'
     Grid/RangeMin: '0.3'     # Reduced from 0.5 to capture closer points
-    Grid/RangeMax: '15.0'    # Increased from 10.0 to map larger areas
+    Grid/RangeMax: '25.0'    # Increased from 10.0 to map larger areas
     
     # Ground filtering - Key parameters to prevent ground as obstacles
     Grid/GroundIsObstacle: 'false'  # CRITICAL: Ground is NOT an obstacle

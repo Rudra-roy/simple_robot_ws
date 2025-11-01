@@ -20,9 +20,35 @@
     publish_tf: True
     
     # RTAB-Map core parameters
-    Rtabmap/DetectionRate: '3'  # Process every 3nd frame for efficiency
+    Rtabmap/DetectionRate: '3'  # Process every 3rd frame for efficiency
     Rtabmap/LoopThr: '0.02'  # Loop closure threshold
     
-   
-    Grid/CellSize: '0.1'  # 5cm resolution
+    # Grid/Occupancy grid parameters
+    Grid/CellSize: '0.05'  # 5cm resolution
+    Grid/RayTracing: 'true'  # Enable ray tracing to mark free space
+    Grid/3D: 'false'  # Use 2D projection
+    Grid/ClusterRadius: '0.1'  # Cluster obstacles
+    Grid/GroundIsObstacle: 'false'  # Don't mark ground as obstacle
+    Grid/MaxObstacleHeight: '2.0'  # Max obstacle height
+    Grid/MinObstacleHeight: '0.1'  # Min obstacle height (ignore ground)
+    Grid/MaxGroundAngle: '45'  # Max ground angle in degrees
+    Grid/NormalsSegmentation: 'true'  # Use normals for segmentation
+    Grid/NoiseFilteringRadius: '0.05'  # Filter noise
+    Grid/NoiseFilteringMinNeighbors: '5'  # Min neighbors for noise filtering
+    Grid/RangeMax: '5.0'  # Max range for mapping
+    Grid/RangeMin: '0.3'  # Min range for mapping
+    Grid/FootprintLength: '0.3'  # Robot footprint
+    Grid/FootprintWidth: '0.3'
+    Grid/FootprintHeight: '0.2'
+    Grid/Scan2dUnknownSpaceFilled: 'true'  # Fill unknown space inside obstacles
+    Grid/PreVoxelFiltering: 'true'  # Voxel filter before processing
+    GridGlobal/MinSize: '20.0'  # Min global grid size
+    GridGlobal/UpdateError: '0.01'  # Update error threshold
+    GridGlobal/FootprintRadius: '0.2'  # Footprint radius
+    GridGlobal/FullUpdate: 'false'  # Incremental updates only
+    GridGlobal/OccupancyThr: '0.5'  # Occupancy threshold
+    GridGlobal/ProbHit: '0.7'  # Probability of hit
+    GridGlobal/ProbMiss: '0.4'  # Probability of miss
+    GridGlobal/ProbClampingMin: '0.1'  # Min clamping probability
+    GridGlobal/ProbClampingMax: '0.9'  # Max clamping probability
     
