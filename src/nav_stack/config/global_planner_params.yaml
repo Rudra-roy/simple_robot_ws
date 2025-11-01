@@ -1,0 +1,17 @@
+global_planner_node:
+  ros__parameters:
+    # Robot physical parameters
+    robot_radius: 0.3  # meters - radius of the robot
+    safety_margin: 0.2  # meters - additional safety clearance
+    
+    # Velocity parameters
+    linear_velocity: 0.5  # m/s - forward speed
+    angular_velocity: 0.5  # rad/s - rotation speed
+    
+    # Goal tolerances
+    goal_tolerance: 0.1  # meters - distance to consider goal reached
+    angular_tolerance: 0.1  # radians - angle alignment tolerance (~5.7 degrees)
+    
+    # Obstacle detection
+    obstacle_check_distance: 2.0  # meters - how far ahead to check for obstacles
+    costmap_obstacle_threshold: 50  # 0-100 - costmap value threshold for obstacles

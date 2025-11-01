@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""
+Launch file for the Navigation Stack with RViz2 visualization
+"""
+
+from launch import LaunchDescription
+from launch_ros.actions import Node
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.substitutions import LaunchConfiguration
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from ament_index_python.packages import get_package_share_directory
+import os
+
+
+def generate_launch_description():
+    # Get package directory
+    pkg_dir = get_package_share_directory('nav_stack')
+    
+    # Path to config files
+    config_file = os.path.join(pkg_dir, 'config', 'global_planner_params.yaml')
+    rviz_config = os.path.join(pkg_dir, 'config', 'nav_stack.rviz')
+    
+    # Declare launch arguments
+    use_sim_time_arg = DeclareLaunchArgument(
+        'use_sim_time',
+        default_value='false',
+        description='Use simulation time if true'
+    )
+    
+    # Global Planner Node
+    global_planner_node = Node(
+        package='nav_stack',
+        executable='global_planner_node',
+        name='global_planner_node',
+        output='screen',
+        parameters=[
+            config_file,
+            {'use_sim_time': LaunchConfiguration('use_sim_time')}
+        ],
+        remappings=[
+            # Add remappings if needed
+        ]
+    )
+    
+    # RViz2 Node
+    rviz_node = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        output='screen',
+        arguments=['-d', rviz_config],
+        parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}]
+    )
+    
+    return LaunchDescription([
+        use_sim_time_arg,
+        global_planner_node,
+        rviz_node,
+    ])
