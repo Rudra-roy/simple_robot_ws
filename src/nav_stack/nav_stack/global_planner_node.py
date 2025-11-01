@@ -95,6 +95,18 @@ class GlobalPlannerNode(Node):
             10
         )
         
+        self.path_marker_pub = self.create_publisher(
+            Marker,
+            '/planned_path_marker',
+            10
+        )
+        
+        self.goal_marker_pub = self.create_publisher(
+            Marker,
+            '/goal_marker',
+            10
+        )
+        
         # TF2
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -103,7 +115,7 @@ class GlobalPlannerNode(Node):
         self.create_timer(0.1, self.control_loop)
         
         # Timer for visualization
-        self.create_timer(0.2, self.publish_robot_boundary)
+        self.create_timer(0.2, self.publish_visualizations)
         
         self.get_logger().info('Global Planner Node initialized')
         self.get_logger().info(f'Robot radius: {self.robot_radius}m, Safety margin: {self.safety_margin}m')
@@ -115,7 +127,12 @@ class GlobalPlannerNode(Node):
         self.obstacle_detected = False
         self.robot_stopped = False
         
-        self.get_logger().info(f'Received new goal: x={msg.pose.position.x:.2f}, y={msg.pose.position.y:.2f}')
+        self.get_logger().info(f'🎯 Received new goal: x={msg.pose.position.x:.2f}, y={msg.pose.position.y:.2f}')
+        self.get_logger().info('📊 Generating path visualization...')
+        
+        # Immediately publish path visualization
+        self.publish_path_to_goal()
+        self.publish_goal_marker()
     
     def odom_callback(self, msg: Odometry):
         """Update current robot pose from odometry"""
@@ -285,9 +302,22 @@ class GlobalPlannerNode(Node):
             )
         
         self.cmd_vel_pub.publish(cmd)
+        
+        # Publish all visualizations
+        self.publish_visualizations()
+    
+    def publish_visualizations(self):
+        """Publish all visualizations"""
+        self.publish_robot_boundary()
+        if self.goal_pose is not None:
+            self.publish_path_to_goal()
+            self.publish_goal_marker()
     
     def publish_robot_boundary(self):
         """Publish robot boundary circle visualization for RViz2"""
+        if self.current_pose is None:
+            return
+            
         marker = Marker()
         marker.header.frame_id = "base_link"
         marker.header.stamp = self.get_clock().now().to_msg()
@@ -305,17 +335,100 @@ class GlobalPlannerNode(Node):
         # Size (diameter and height)
         marker.scale.x = (self.robot_radius + self.safety_margin) * 2.0
         marker.scale.y = (self.robot_radius + self.safety_margin) * 2.0
-        marker.scale.z = 0.01  # Thin cylinder (like a disk)
+        marker.scale.z = 0.05  # Slightly thicker for visibility
         
         # Color (semi-transparent blue)
         marker.color.r = 0.0
         marker.color.g = 0.5
         marker.color.b = 1.0
-        marker.color.a = 0.3
+        marker.color.a = 0.5  # More visible
         
-        marker.lifetime.sec = 0  #永久显示
+        # Make it persistent
+        marker.lifetime.sec = 0
+        marker.lifetime.nanosec = 0
         
         self.robot_boundary_pub.publish(marker)
+    
+    def publish_path_to_goal(self):
+        """Publish line strip showing path from robot to goal"""
+        if self.current_pose is None or self.goal_pose is None:
+            return
+        
+        marker = Marker()
+        marker.header.frame_id = "odom"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "global_path"
+        marker.id = 1
+        marker.type = Marker.LINE_STRIP
+        marker.action = Marker.ADD
+        
+        # Start point (robot position)
+        start_point = marker.points[0] if len(marker.points) > 0 else marker.points.append(type('', (), {})())
+        start_point = type('', (), {})()
+        start_point.x = self.current_pose.position.x
+        start_point.y = self.current_pose.position.y
+        start_point.z = 0.1  # Slightly above ground
+        marker.points.append(start_point)
+        
+        # End point (goal position)
+        end_point = type('', (), {})()
+        end_point.x = self.goal_pose.pose.position.x
+        end_point.y = self.goal_pose.pose.position.y
+        end_point.z = 0.1
+        marker.points.append(end_point)
+        
+        # Line properties
+        marker.scale.x = 0.05  # Line width
+        
+        # Color (bright green if clear, yellow if obstacle)
+        if self.obstacle_detected:
+            marker.color.r = 1.0
+            marker.color.g = 1.0
+            marker.color.b = 0.0
+            marker.color.a = 1.0
+        else:
+            marker.color.r = 0.0
+            marker.color.g = 1.0
+            marker.color.b = 0.0
+            marker.color.a = 1.0
+        
+        marker.lifetime.sec = 0
+        marker.lifetime.nanosec = 0
+        
+        self.path_marker_pub.publish(marker)
+    
+    def publish_goal_marker(self):
+        """Publish goal position marker (arrow)"""
+        if self.goal_pose is None:
+            return
+        
+        marker = Marker()
+        marker.header.frame_id = "odom"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "goal"
+        marker.id = 2
+        marker.type = Marker.ARROW
+        marker.action = Marker.ADD
+        
+        # Position and orientation from goal pose
+        marker.pose = self.goal_pose.pose
+        marker.pose.position.z = 0.2  # Raise above ground for visibility
+        
+        # Arrow size
+        marker.scale.x = 0.5  # Length
+        marker.scale.y = 0.1  # Width
+        marker.scale.z = 0.1  # Height
+        
+        # Color (bright red)
+        marker.color.r = 1.0
+        marker.color.g = 0.0
+        marker.color.b = 0.0
+        marker.color.a = 1.0
+        
+        marker.lifetime.sec = 0
+        marker.lifetime.nanosec = 0
+        
+        self.goal_marker_pub.publish(marker)
 
 
 def main(args=None):
