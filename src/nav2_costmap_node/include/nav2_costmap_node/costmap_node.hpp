@@ -32,16 +32,9 @@ class CostmapNode : public rclcpp::Node {
   void map_callback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
   void publish_costmap();
   
-  // Layer processing functions
-  void update_static_layer();
-  void update_obstacle_layer(const sensor_msgs::msg::PointCloud2::SharedPtr msg,
-                             const geometry_msgs::msg::TransformStamped& pc_to_base,
-                             const geometry_msgs::msg::TransformStamped& base_to_global);
-  void update_inflation_layer();
-  void combine_layers();
-  
-  // Ray tracing for clearing free space
-  void raytrace_line(int x0, int y0, int x1, int y1, std::vector<int8_t>& layer);
+  // Simple processing functions
+  void update_obstacles_simple(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+  void mark_obstacle_with_inflation(int mx, int my);
   
   // Utility functions
   bool world_to_map(double wx, double wy, int& mx, int& my) const;
@@ -68,20 +61,14 @@ class CostmapNode : public rclcpp::Node {
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pc_sub_;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub_;
   rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr costmap_pub_;
-  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr static_layer_pub_;
-  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr obstacle_layer_pub_;
-  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr inflation_layer_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   // TF2
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
-  // Costmap layers
-  std::vector<int8_t> static_layer_;      // From map server
-  std::vector<int8_t> obstacle_layer_;    // From point cloud
-  std::vector<int8_t> inflation_layer_;   // Inflated obstacles
-  std::vector<int8_t> costmap_data_;      // Combined final costmap
+  // Simple costmap data
+  std::vector<int8_t> costmap_data_;      // Single layer costmap
   
   // Static map data
   nav_msgs::msg::OccupancyGrid::SharedPtr static_map_;
