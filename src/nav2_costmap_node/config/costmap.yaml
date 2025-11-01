@@ -3,11 +3,11 @@ costmap:
     ros__parameters:
       # Frame settings
       global_frame_id: odom
-      base_frame_id: base_link
+      base_frame_id: camera_depth
       
       # Update frequencies
-      update_frequency: 10.0
-      publish_frequency: 10.0
+      update_frequency: 100.0
+      publish_frequency: 100.0
       
       # Map settings
       width: 500
@@ -26,8 +26,12 @@ costmap:
       static_map_topic: /map
       
       # Obstacle layer configuration
-      obstacle_max_range: 5.0
-      obstacle_min_range: 0.1
+      obstacle_max_range: 10.0   # Max sensor range
+      obstacle_min_range: 0.1    # Min sensor range
+      
+      # Ground filtering (CRITICAL for depth cameras)
+      min_obstacle_z: 0.40       # Ignore ground: points below 10cm
+      max_obstacle_z: 4.00       # Ignore ceiling: points above 2m
       
       # Inflation layer configuration
       inflation_radius: 0.3
