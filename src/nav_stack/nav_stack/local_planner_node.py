@@ -230,21 +230,22 @@ class LocalPlannerNode(Node):
             self.state = PlannerState.IDLE
             return
         
-        self.get_logger().info('🔍 Analyzing free directions...')
+        self.get_logger().info('🔍 Analyzing left vs right free space...')
         
-        best_direction = self.find_best_free_direction()
+        # Simple: just determine if left or right has more free space
+        turn_direction = self.find_better_side()  # Returns "left" or "right"
         
-        if best_direction is None:
-            self.get_logger().error('❌ No free direction found - returning to idle')
+        if turn_direction is None:
+            self.get_logger().error('❌ No free space found - returning to idle')
             self.signal_global_planner()
             return
         
-        self.chosen_direction = best_direction
-        self.get_logger().info(f'✅ Chosen direction: {math.degrees(best_direction):.1f}°')
+        self.chosen_direction = turn_direction  # Store "left" or "right"
+        self.get_logger().info(f'✅ Turning {turn_direction}')
         self.state = PlannerState.MOVING_TANGENT
     
-    def find_best_free_direction(self):
-        """Cast rays to find direction with most free space"""
+    def find_better_side(self):
+        """Simple: determine if left or right has more free space"""
         if self.global_map is None:
             return None
         
@@ -256,86 +257,85 @@ class LocalPlannerNode(Node):
         
         robot_x = self.current_pose.position.x
         robot_y = self.current_pose.position.y
+        current_yaw = self.quaternion_to_yaw(self.current_pose.orientation)
         
-        # Goal direction for biasing
-        goal_dx = self.goal_pose.pose.position.x - robot_x
-        goal_dy = self.goal_pose.pose.position.y - robot_y
-        goal_angle = math.atan2(goal_dy, goal_dx)
+        # Cast rays to the left (90 degrees) and right (-90 degrees)
+        left_angle = current_yaw + math.pi / 2  # 90 degrees left
+        right_angle = current_yaw - math.pi / 2  # 90 degrees right
         
-        best_direction = None
-        best_score = -1
+        left_distance = 0.0
+        right_distance = 0.0
+        max_distance = 5.0
         
-        # Cast rays in all directions
-        num_rays = int(360 / self.ray_resolution)
-        for i in range(num_rays):
-            angle = 2.0 * math.pi * i / num_rays
+        # Measure left side
+        for dist in np.arange(0.5, max_distance, resolution):
+            ray_x = robot_x + dist * math.cos(left_angle)
+            ray_y = robot_y + dist * math.sin(left_angle)
             
-            # Cast ray and measure free distance
-            max_distance = 5.0  # Maximum ray length
-            free_distance = 0.0
+            grid_x = int((ray_x - origin_x) / resolution)
+            grid_y = int((ray_y - origin_y) / resolution)
             
-            for dist in np.arange(0.5, max_distance, resolution):
-                ray_x = robot_x + dist * math.cos(angle)
-                ray_y = robot_y + dist * math.sin(angle)
-                
-                grid_x = int((ray_x - origin_x) / resolution)
-                grid_y = int((ray_y - origin_y) / resolution)
-                
-                if 0 <= grid_x < width and 0 <= grid_y < height:
-                    index = grid_y * width + grid_x
-                    if index < len(self.global_map.data):
-                        cost = self.global_map.data[index]
-                        # Unknown (-1) or free (0) is good, occupied (100) is bad
-                        if cost > 10:  # Hit obstacle
-                            break
-                        free_distance = dist
-                else:
-                    break
-            
-            # Score = free distance + bias toward goal
-            angle_diff = abs(self.normalize_angle(angle - goal_angle))
-            goal_bias = 1.0 - (angle_diff / math.pi) * 0.3  # 30% bonus for goal direction
-            score = free_distance * goal_bias
-            
-            if free_distance >= self.min_free_distance and score > best_score:
-                best_score = score
-                best_direction = angle
+            if 0 <= grid_x < width and 0 <= grid_y < height:
+                index = grid_y * width + grid_x
+                if index < len(self.global_map.data):
+                    cost = self.global_map.data[index]
+                    if cost > 10:  # Hit obstacle
+                        break
+                    left_distance = dist
+            else:
+                break
         
-        return best_direction
+        # Measure right side
+        for dist in np.arange(0.5, max_distance, resolution):
+            ray_x = robot_x + dist * math.cos(right_angle)
+            ray_y = robot_y + dist * math.sin(right_angle)
+            
+            grid_x = int((ray_x - origin_x) / resolution)
+            grid_y = int((ray_y - origin_y) / resolution)
+            
+            if 0 <= grid_x < width and 0 <= grid_y < height:
+                index = grid_y * width + grid_x
+                if index < len(self.global_map.data):
+                    cost = self.global_map.data[index]
+                    if cost > 10:  # Hit obstacle
+                        break
+                    right_distance = dist
+            else:
+                break
+        
+        self.get_logger().info(f'Left: {left_distance:.2f}m, Right: {right_distance:.2f}m')
+        
+        # Return the side with more space
+        if left_distance > right_distance:
+            return "left"
+        elif right_distance > left_distance:
+            return "right"
+        else:
+            return "left"  # Default to left if equal
     
     def execute_tangent_movement(self):
-        """Move in chosen tangent direction"""
+        """Rotate left/right and watch costmap for clear path"""
         if self.chosen_direction is None:
             self.state = PlannerState.ANALYZING
             return
         
-        # Check for obstacles in current path
-        if self.check_obstacle_in_direction(self.chosen_direction):
-            self.get_logger().warn('⚠️ Obstacle detected in tangent path - re-analyzing')
-            self.state = PlannerState.ANALYZING
-            return
-        
-        current_yaw = self.quaternion_to_yaw(self.current_pose.orientation)
-        angle_diff = self.normalize_angle(self.chosen_direction - current_yaw)
-        
-        cmd = Twist()
-        
-        # Turn toward chosen direction
-        if abs(angle_diff) > 0.1:
-            cmd.angular.z = self.angular_vel if angle_diff > 0 else -self.angular_vel
-            self.get_logger().info(f'🔄 Turning to tangent direction', throttle_duration_sec=1.0)
-        else:
-            # Move forward and check if path is clear
-            cmd.linear.x = self.linear_vel
-            self.get_logger().info(f'➡️ Moving along tangent', throttle_duration_sec=1.0)
+        # Check local costmap - is path ahead clear?
+        if self.check_obstacle_ahead():
+            # Obstacle ahead - keep rotating in chosen direction
+            cmd = Twist()
+            if self.chosen_direction == "left":
+                cmd.angular.z = self.angular_vel
+            else:  # "right"
+                cmd.angular.z = -self.angular_vel
             
-            # Check if we should transition to straight clear test
-            if not self.check_obstacle_ahead():
-                self.get_logger().info('✅ Path appears clear - starting 5s straight test')
-                self.state = PlannerState.STRAIGHT_CLEAR
-                self.clear_timer_start = self.get_clock().now()
-        
-        self.cmd_vel_pub.publish(cmd)
+            self.cmd_vel_pub.publish(cmd)
+            self.get_logger().info(f'🔄 Rotating {self.chosen_direction} - obstacle ahead', throttle_duration_sec=1.0)
+        else:
+            # Path is clear! Stop rotating and start 5s forward test
+            self.stop_robot()
+            self.get_logger().info('✅ Path clear - starting 5s straight test')
+            self.state = PlannerState.STRAIGHT_CLEAR
+            self.clear_timer_start = self.get_clock().now()
     
     def execute_straight_clear(self):
         """Move straight for 5 seconds to confirm path is clear"""
