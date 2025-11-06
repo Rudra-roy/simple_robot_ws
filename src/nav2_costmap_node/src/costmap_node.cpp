@@ -289,17 +289,19 @@ private:
 
   void publish_costmap()
   {
-    // Update robot pose
+    // Update robot pose - get latest transform
+    geometry_msgs::msg::TransformStamped tf;
     try {
-      const auto tf = tf_buffer_->lookupTransform(global_frame_, robot_frame_, tf2::TimePointZero);
+      tf = tf_buffer_->lookupTransform(global_frame_, robot_frame_, tf2::TimePointZero);
       robot_x_ = tf.transform.translation.x;
       robot_y_ = tf.transform.translation.y;
     } catch (tf2::TransformException &ex) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000, "TF (robot): %s", ex.what());
       return;
     }
-
-    const auto stamp = now();
+    
+    // Use the TF timestamp for consistency with the transform
+    const auto stamp = tf.header.stamp;
     const double origin_x = robot_x_ - (width_  * resolution_ / 2.0);
     const double origin_y = robot_y_ - (height_ * resolution_ / 2.0);
 

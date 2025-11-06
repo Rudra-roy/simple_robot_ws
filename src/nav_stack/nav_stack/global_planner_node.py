@@ -8,12 +8,14 @@ Checks for obstacles and triggers local planner when needed.
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
-from geometry_msgs.msg import PoseStamped, Twist
+from geometry_msgs.msg import PoseStamped, Twist, Point
 from nav_msgs.msg import OccupancyGrid, Odometry
+from sensor_msgs.msg import PointCloud2, PointField
 from visualization_msgs.msg import Marker
 from tf2_ros import TransformListener, Buffer
 import math
 import numpy as np
+import struct
 
 
 class GlobalPlannerNode(Node):
@@ -77,7 +79,7 @@ class GlobalPlannerNode(Node):
         
         self.odom_sub = self.create_subscription(
             Odometry,
-            '/odom',
+            '/odometry/filtered',
             self.odom_callback,
             qos_best_effort
         )
@@ -90,8 +92,8 @@ class GlobalPlannerNode(Node):
         )
         
         self.robot_boundary_pub = self.create_publisher(
-            Marker,
-            '/robot_boundary',
+            PointCloud2,
+            '/robot_boundary_cloud',
             10
         )
         
@@ -136,6 +138,8 @@ class GlobalPlannerNode(Node):
     
     def odom_callback(self, msg: Odometry):
         """Update current robot pose from odometry"""
+        if self.current_pose is None:
+            self.get_logger().info(f'✓ Odometry received: x={msg.pose.pose.position.x:.2f}, y={msg.pose.pose.position.y:.2f}')
         self.current_pose = msg.pose.pose
     
     def costmap_callback(self, msg: OccupancyGrid):
@@ -246,10 +250,15 @@ class GlobalPlannerNode(Node):
     
     def control_loop(self):
         """Main control loop"""
-        if self.goal_pose is None or self.current_pose is None:
+        if self.goal_pose is None:
+            return
+        
+        if self.current_pose is None:
+            self.get_logger().warn('⚠️ Waiting for odometry data...', throttle_duration_sec=2.0)
             return
         
         distance = self.get_distance_to_goal()
+        self.get_logger().info(f'🚀 Control loop running: distance={distance:.2f}m', throttle_duration_sec=1.0)
         
         # Check if goal reached
         if distance < self.goal_tolerance:
@@ -302,52 +311,75 @@ class GlobalPlannerNode(Node):
             )
         
         self.cmd_vel_pub.publish(cmd)
-        
-        # Publish all visualizations
-        self.publish_visualizations()
     
     def publish_visualizations(self):
         """Publish all visualizations"""
+        if self.current_pose is None:
+            self.get_logger().warn('⚠️ No odometry for visualization', throttle_duration_sec=5.0)
         self.publish_robot_boundary()
         if self.goal_pose is not None:
             self.publish_path_to_goal()
             self.publish_goal_marker()
     
     def publish_robot_boundary(self):
-        """Publish robot boundary circle visualization for RViz2"""
+        """Publish point cloud circle around robot boundary"""
         if self.current_pose is None:
             return
+        
+        try:
+            # Generate circle of points at 0.3m radius
+            num_points = 360  # Dense circle (every 1 degree)
+            radius = 0.3  # 0.3m radius
             
-        marker = Marker()
-        marker.header.frame_id = "base_link"
-        marker.header.stamp = self.get_clock().now().to_msg()
-        marker.ns = "robot_boundary"
-        marker.id = 0
-        marker.type = Marker.CYLINDER
-        marker.action = Marker.ADD
+            # Get robot's current yaw
+            robot_yaw = self.quaternion_to_yaw(self.current_pose.orientation)
+            robot_x = self.current_pose.position.x
+            robot_y = self.current_pose.position.y
         
-        # Position (centered on robot)
-        marker.pose.position.x = 0.0
-        marker.pose.position.y = 0.0
-        marker.pose.position.z = 0.0
-        marker.pose.orientation.w = 1.0
+        # Transform circle points to odom frame
+            points = []
+            for i in range(num_points):
+                angle = 2.0 * math.pi * i / num_points
+                # Local circle point
+                local_x = radius * math.cos(angle)
+                local_y = radius * math.sin(angle)
+                
+                # Rotate by robot yaw and translate to robot position
+                x = robot_x + local_x * math.cos(robot_yaw) - local_y * math.sin(robot_yaw)
+                y = robot_y + local_x * math.sin(robot_yaw) + local_y * math.cos(robot_yaw)
+                z = 0.0
+                points.append([x, y, z])
         
-        # Size (diameter and height)
-        marker.scale.x = (self.robot_radius + self.safety_margin) * 2.0
-        marker.scale.y = (self.robot_radius + self.safety_margin) * 2.0
-        marker.scale.z = 0.05  # Slightly thicker for visibility
-        
-        # Color (semi-transparent blue)
-        marker.color.r = 0.0
-        marker.color.g = 0.5
-        marker.color.b = 1.0
-        marker.color.a = 0.5  # More visible
-        
-        # Make it persistent
-        marker.lifetime.sec = 0
-        marker.lifetime.nanosec = 0
-        
-        self.robot_boundary_pub.publish(marker)
+            # Create PointCloud2 message
+            cloud_msg = PointCloud2()
+            cloud_msg.header.frame_id = "odom"  # Publish in odom frame
+            cloud_msg.header.stamp = self.get_clock().now().to_msg()
+            
+            # Define point cloud fields (x, y, z)
+            cloud_msg.fields = [
+                PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+                PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+                PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
+            ]
+            
+            cloud_msg.is_bigendian = False
+            cloud_msg.point_step = 12  # 3 floats * 4 bytes
+            cloud_msg.row_step = cloud_msg.point_step * len(points)
+            cloud_msg.is_dense = True
+            cloud_msg.height = 1
+            cloud_msg.width = len(points)
+            
+            # Pack point data
+            buffer = []
+            for point in points:
+                buffer.append(struct.pack('fff', point[0], point[1], point[2]))
+            
+            cloud_msg.data = b''.join(buffer)
+            
+            self.robot_boundary_pub.publish(cloud_msg)
+            self.get_logger().info(f'📍 Published boundary cloud with {len(points)} points', throttle_duration_sec=5.0)
+        except Exception as e:
+            self.get_logger().error(f'❌ Failed to publish boundary cloud: {e}')
     
     def publish_path_to_goal(self):
         """Publish line strip showing path from robot to goal"""
@@ -363,15 +395,14 @@ class GlobalPlannerNode(Node):
         marker.action = Marker.ADD
         
         # Start point (robot position)
-        start_point = marker.points[0] if len(marker.points) > 0 else marker.points.append(type('', (), {})())
-        start_point = type('', (), {})()
+        start_point = Point()
         start_point.x = self.current_pose.position.x
         start_point.y = self.current_pose.position.y
         start_point.z = 0.1  # Slightly above ground
         marker.points.append(start_point)
         
         # End point (goal position)
-        end_point = type('', (), {})()
+        end_point = Point()
         end_point.x = self.goal_pose.pose.position.x
         end_point.y = self.goal_pose.pose.position.y
         end_point.z = 0.1

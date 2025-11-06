@@ -6,8 +6,8 @@ costmap:
       base_frame_id: camera_depth
       
       # Update frequencies
-      update_frequency: 100.0
-      publish_frequency: 100.0
+      update_frequency: 50.0     # Process point clouds at 50Hz
+      publish_frequency: 30.0     # Publish costmap at 30Hz (prevents RViz overflow)
       
       # Map settings
       width: 500
