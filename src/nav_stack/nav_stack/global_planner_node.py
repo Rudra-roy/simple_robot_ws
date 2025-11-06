@@ -184,7 +184,11 @@ class GlobalPlannerNode(Node):
         return angle_diff
     
     def check_obstacles_in_path(self):
-        """Check if there are obstacles in the direct path to goal"""
+        """
+        Check if obstacles interfere with robot's circular boundary along direct path to goal.
+        Creates a 'bee line' - a swept circle (robot boundary) from current pose to goal.
+        Only obstacles within this swept volume and within 2m trigger stopping.
+        """
         if self.costmap is None or self.current_pose is None or self.goal_pose is None:
             return False
         
@@ -199,45 +203,57 @@ class GlobalPlannerNode(Node):
         robot_x = self.current_pose.position.x
         robot_y = self.current_pose.position.y
         
-        # Goal direction
-        dx = self.goal_pose.pose.position.x - robot_x
-        dy = self.goal_pose.pose.position.y - robot_y
-        distance = math.sqrt(dx*dx + dy*dy)
+        # Goal position
+        goal_x = self.goal_pose.pose.position.x
+        goal_y = self.goal_pose.pose.position.y
         
-        if distance < 0.01:
+        # Direction vector to goal
+        dx = goal_x - robot_x
+        dy = goal_y - robot_y
+        distance_to_goal = math.sqrt(dx*dx + dy*dy)
+        
+        if distance_to_goal < 0.01:
             return False
         
         # Normalize direction
-        dx /= distance
-        dy /= distance
+        dx_norm = dx / distance_to_goal
+        dy_norm = dy / distance_to_goal
         
-        # Check distance (limit to obstacle_check_distance)
-        check_distance = min(distance, self.obstacle_check_distance)
+        # Check distance (limit to obstacle_check_distance = 2.0m)
+        check_distance = min(distance_to_goal, self.obstacle_check_distance)
         
-        # Check points along the path
-        num_checks = int(check_distance / resolution) + 1
-        robot_width = self.robot_radius + self.safety_margin
+        # Robot boundary radius (0.3m)
+        boundary_radius = self.robot_radius
         
-        for i in range(1, num_checks):
-            t = (i * resolution)
-            check_x = robot_x + dx * t
-            check_y = robot_y + dy * t
+        # Sample points along the bee line at resolution intervals
+        num_samples = int(check_distance / resolution) + 1
+        
+        for i in range(num_samples):
+            # Position along the line
+            t = i * resolution
+            line_x = robot_x + dx_norm * t
+            line_y = robot_y + dy_norm * t
             
-            # Check area around the path (robot width)
-            for offset in np.linspace(-robot_width, robot_width, 5):
-                # Perpendicular offset
-                offset_x = check_x - dy * offset
-                offset_y = check_y + dx * offset
+            # Check all costmap cells within boundary_radius of this line point
+            # Sample the circle around each line point
+            num_circle_samples = 16  # Check 16 points around the circle
+            for angle_idx in range(num_circle_samples):
+                angle = 2.0 * math.pi * angle_idx / num_circle_samples
+                
+                # Point on robot boundary circle
+                check_x = line_x + boundary_radius * math.cos(angle)
+                check_y = line_y + boundary_radius * math.sin(angle)
                 
                 # Convert to grid coordinates
-                grid_x = int((offset_x - origin_x) / resolution)
-                grid_y = int((offset_y - origin_y) / resolution)
+                grid_x = int((check_x - origin_x) / resolution)
+                grid_y = int((check_y - origin_y) / resolution)
                 
-                # Check bounds
+                # Check if within costmap bounds
                 if 0 <= grid_x < width and 0 <= grid_y < height:
                     index = grid_y * width + grid_x
                     if index < len(self.costmap.data):
                         cost = self.costmap.data[index]
+                        # If obstacle detected in swept circle volume
                         if cost > self.costmap_threshold:
                             return True
         
