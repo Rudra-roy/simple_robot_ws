@@ -442,7 +442,6 @@ class GlobalPlannerNode(Node):
             cloud_msg.data = b''.join(buffer)
             
             self.robot_boundary_pub.publish(cloud_msg)
-            self.get_logger().info(f'📍 Published boundary cloud with {len(points)} points', throttle_duration_sec=5.0)
         except Exception as e:
             self.get_logger().error(f'❌ Failed to publish boundary cloud: {e}')
     
