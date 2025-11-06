@@ -60,6 +60,8 @@ class LocalPlannerNode(Node):
         
         # 360 rotation tracking
         self.rotation_start_yaw = None
+        self.rotation_total = 0.0
+        self.rotation_last_yaw = 0.0
         self.rotation_complete = False
         
         # Tangent movement tracking
@@ -135,6 +137,8 @@ class LocalPlannerNode(Node):
             self.safe_point = (self.current_pose.position.x, self.current_pose.position.y)
             self.state = PlannerState.ROTATING_360
             self.rotation_start_yaw = None
+            self.rotation_total = 0.0
+            self.rotation_last_yaw = 0.0
             self.rotation_complete = False
     
     def goal_callback(self, msg: PoseStamped):
@@ -196,14 +200,20 @@ class LocalPlannerNode(Node):
         
         if self.rotation_start_yaw is None:
             self.rotation_start_yaw = current_yaw
+            self.rotation_total = 0.0
+            self.rotation_last_yaw = current_yaw
             self.get_logger().info('🔄 Starting 360° rotation for mapping')
+            
+        # Track cumulative rotation to handle -π/π wrapping
+        yaw_diff = self.normalize_angle(current_yaw - self.rotation_last_yaw)
+        self.rotation_total += abs(yaw_diff)
+        self.rotation_last_yaw = current_yaw
         
-        # Check if completed full rotation
-        angle_rotated = abs(self.normalize_angle(current_yaw - self.rotation_start_yaw))
-        
-        if angle_rotated >= 2.0 * math.pi - 0.2:  # Nearly full rotation
+        # Check if completed full rotation (2π radians = 360°)
+        if self.rotation_total >= 2.0 * math.pi - 0.1:
             self.stop_robot()
             self.get_logger().info('✅ 360° rotation complete')
+            self.rotation_start_yaw = None  # Reset for next time
             self.state = PlannerState.ANALYZING
             return
         
@@ -211,6 +221,7 @@ class LocalPlannerNode(Node):
         cmd = Twist()
         cmd.angular.z = self.rotation_speed
         self.cmd_vel_pub.publish(cmd)
+        self.get_logger().info(f'🔄 Rotating: {math.degrees(self.rotation_total):.1f}°/360°', throttle_duration_sec=1.0)
     
     def execute_analysis(self):
         """Analyze map and find best free direction"""
