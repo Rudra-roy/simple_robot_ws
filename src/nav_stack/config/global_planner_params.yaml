@@ -13,5 +13,5 @@ global_planner_node:
     angular_tolerance: 0.1  # radians - angle alignment tolerance (~5.7 degrees)
     
     # Obstacle detection
-    obstacle_check_distance: 2.0  # meters - how far ahead to check for obstacles
-    costmap_obstacle_threshold: 50  # 0-100 - costmap value threshold for obstacles
+    obstacle_check_distance: 4.0  # meters - how far ahead to check for obstacles
+    costmap_obstacle_threshold: 70  # 0-100 - costmap value threshold for obstacles

@@ -1,53 +1,54 @@
 # Navigation Stack (nav_stack)
 
-A professional ROS2 navigation stack implementation with modular architecture.
+Professional ROS2 navigation with coordinated global and local planners.
 
 ## Overview
 
-This package implements a professional navigation stack with separate global and local planners for robust autonomous navigation.
-
-## Features
-
-### Global Planner Node
-- **Goal-based navigation**: Receives goal poses from `/goal_pose` topic
-- **Intelligent alignment**: Aligns robot to target direction before moving forward
-- **Obstacle detection**: Monitors `/costmap` topic for obstacles in the direct path
-- **Safe operation**: Stops robot when obstacles are detected
-- **Visual feedback**: Publishes robot boundary visualization to RViz2
+Dual-planner navigation system: Global planner for direct navigation, Local planner for tangential obstacle avoidance.
 
 ## Architecture
 
 ```
 nav_stack/
 ├── nav_stack/
-│   ├── global_planner_node.py    # Global path planning
-│   └── (future: local_planner_node.py)  # Local obstacle avoidance
+│   ├── global_planner_node.py    # Direct path navigation with bee-line collision checking
+│   └── local_planner_node.py     # Tangential obstacle avoidance
 ├── config/
 │   └── global_planner_params.yaml
 ├── launch/
-│   └── nav_stack.launch.py
+│   └── nav_stack.launch.py       # Launches both planners
 └── README.md
 ```
+
+## Coordination
+
+- **Global Planner** navigates directly to goal, monitors bee-line (swept circle) for obstacles within 2m
+- Triggers **Local Planner** when obstacle blocks bee-line
+- **Local Planner** performs 360° scan, finds free tangent direction, navigates around obstacle
+- After 5s clear path, checks if direct goal path is clear
+- Signals Global Planner to resume when clear
+
+## Topics
+
+**Coordination:**
+- `/local_planner_trigger` (Bool) - Global → Local activation
+- `/planner_state` (String) - Coordination: "global_active", "local_active"
+- `/goal_reached` (Bool) - Waypoint completion signal
+
+**Navigation:**
+- `/goal_pose` (PoseStamped) - Target goals
+- `/costmap` (OccupancyGrid) - Local obstacle detection
+- `/map` (OccupancyGrid) - Global map for analysis
+- `/odom` (Odometry) - Robot pose
+- `/cmd_vel` (Twist) - Velocity commands
 
 ## Nodes
 
 ### global_planner_node
+Direct navigation with bee-line collision checking (swept circle at robot_radius=0.3m along path).
 
-**Subscribed Topics:**
-- `/goal_pose` (geometry_msgs/PoseStamped) - Target goal pose
-- `/costmap` (nav_msgs/OccupancyGrid) - Costmap for obstacle detection
-- `/odom` (nav_msgs/Odometry) - Robot odometry
-
-**Published Topics:**
-- `/cmd_vel` (geometry_msgs/Twist) - Velocity commands
-- `/robot_boundary` (visualization_msgs/Marker) - Robot boundary circle visualization
-
-**Parameters:**
-- `robot_radius` (double, default: 0.3) - Robot radius in meters
-- `safety_margin` (double, default: 0.2) - Additional safety clearance
-- `linear_velocity` (double, default: 0.5) - Forward speed in m/s
-- `angular_velocity` (double, default: 0.5) - Rotation speed in rad/s
-- `goal_tolerance` (double, default: 0.1) - Distance to consider goal reached
+### local_planner_node
+Tangential approach: 360° rotation → free direction analysis → tangent movement → 5s straight test → goal check.
 - `angular_tolerance` (double, default: 0.1) - Angle alignment tolerance in radians
 - `obstacle_check_distance` (double, default: 2.0) - Look-ahead distance for obstacles
 - `costmap_obstacle_threshold` (int, default: 50) - Costmap value threshold (0-100)
