@@ -40,7 +40,23 @@ def generate_launch_description():
         ]
     )
     
+    # Local Planner Node
+    local_planner_node = Node(
+        package='nav_stack',
+        executable='local_planner_node',
+        name='local_planner_node',
+        output='screen',
+        parameters=[
+            config_file,
+            {'use_sim_time': LaunchConfiguration('use_sim_time')}
+        ],
+        remappings=[
+            # Add remappings if needed
+        ]
+    )
+    
     return LaunchDescription([
         use_sim_time_arg,
         global_planner_node,
+        local_planner_node,
     ])
