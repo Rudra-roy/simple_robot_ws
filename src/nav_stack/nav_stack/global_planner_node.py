@@ -11,6 +11,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from geometry_msgs.msg import PoseStamped, Twist, Point
 from nav_msgs.msg import OccupancyGrid, Odometry
 from sensor_msgs.msg import PointCloud2, PointField
+from std_msgs.msg import Bool, String
 from visualization_msgs.msg import Marker
 from tf2_ros import TransformListener, Buffer
 import math
@@ -29,7 +30,7 @@ class GlobalPlannerNode(Node):
         self.declare_parameter('angular_velocity', 0.5)  # rad/s
         self.declare_parameter('goal_tolerance', 0.1)  # meters
         self.declare_parameter('angular_tolerance', 0.1)  # radians
-        self.declare_parameter('obstacle_check_distance', 2.0)  # meters
+        self.declare_parameter('obstacle_check_distance', 4.0)  # meters
         self.declare_parameter('costmap_obstacle_threshold', 50)  # 0-100
         
         self.robot_radius = self.get_parameter('robot_radius').value
@@ -48,6 +49,7 @@ class GlobalPlannerNode(Node):
         self.is_aligned = False
         self.obstacle_detected = False
         self.robot_stopped = False
+        self.planner_state = "ACTIVE"  # ACTIVE or IDLE
         
         # QoS profiles
         qos_reliable = QoSProfile(
@@ -109,6 +111,33 @@ class GlobalPlannerNode(Node):
             10
         )
         
+        # Planner coordination publishers
+        self.local_planner_trigger_pub = self.create_publisher(
+            Bool,
+            '/local_planner_trigger',
+            10
+        )
+        
+        self.planner_state_pub = self.create_publisher(
+            String,
+            '/planner_state',
+            10
+        )
+        
+        self.goal_reached_pub = self.create_publisher(
+            Bool,
+            '/goal_reached',
+            10
+        )
+        
+        # Planner coordination subscriber
+        self.create_subscription(
+            String,
+            '/planner_state',
+            self.planner_state_callback,
+            10
+        )
+        
         # TF2
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -128,13 +157,21 @@ class GlobalPlannerNode(Node):
         self.is_aligned = False
         self.obstacle_detected = False
         self.robot_stopped = False
+        self.planner_state = "ACTIVE"
         
-        self.get_logger().info(f'🎯 Received new goal: x={msg.pose.position.x:.2f}, y={msg.pose.position.y:.2f}')
-        self.get_logger().info('📊 Generating path visualization...')
+        self.get_logger().info(f'🎯 New goal: x={msg.pose.position.x:.2f}, y={msg.pose.position.y:.2f}')
         
         # Immediately publish path visualization
         self.publish_path_to_goal()
         self.publish_goal_marker()
+    
+    def planner_state_callback(self, msg: String):
+        """Listen to planner state changes"""
+        if msg.data == "local_active":
+            self.planner_state = "IDLE"
+        elif msg.data == "global_active":
+            self.planner_state = "ACTIVE"
+            self.obstacle_detected = False
     
     def odom_callback(self, msg: Odometry):
         """Update current robot pose from odometry"""
@@ -270,36 +307,47 @@ class GlobalPlannerNode(Node):
             return
         
         if self.current_pose is None:
-            self.get_logger().warn('⚠️ Waiting for odometry data...', throttle_duration_sec=2.0)
+            return
+        
+        # If local planner is active, stay idle
+        if self.planner_state == "IDLE":
             return
         
         distance = self.get_distance_to_goal()
-        self.get_logger().info(f'🚀 Control loop running: distance={distance:.2f}m', throttle_duration_sec=1.0)
         
         # Check if goal reached
         if distance < self.goal_tolerance:
             self.stop_robot()
-            self.get_logger().info('Goal reached!', throttle_duration_sec=2.0)
+            self.get_logger().info('✅ Goal reached!')
+            
+            # Publish goal reached signal
+            msg = Bool()
+            msg.data = True
+            self.goal_reached_pub.publish(msg)
+            
             self.goal_pose = None
+            self.planner_state = "IDLE"
             return
         
         # Check for obstacles in path
         obstacle_in_path = self.check_obstacles_in_path()
         
         if obstacle_in_path:
-            if not self.obstacle_detected:
-                self.get_logger().warn('Obstacle found in the path')
-                self.get_logger().info('Preparing local planner for obstacle avoidance')
-                self.obstacle_detected = True
-            
-            self.stop_robot()
-            self.robot_stopped = True
+            if self.planner_state == "ACTIVE":
+                self.stop_robot()
+                self.get_logger().warn('⚠️ Obstacle in path - triggering local planner')
+                
+                # Trigger local planner
+                trigger_msg = Bool()
+                trigger_msg.data = True
+                self.local_planner_trigger_pub.publish(trigger_msg)
+                
+                # Set state to IDLE
+                self.planner_state = "IDLE"
+                state_msg = String()
+                state_msg.data = "local_active"
+                self.planner_state_pub.publish(state_msg)
             return
-        else:
-            if self.obstacle_detected:
-                self.get_logger().info('Path is clear, resuming navigation')
-                self.obstacle_detected = False
-                self.robot_stopped = False
         
         # Calculate angle to goal
         angle_to_goal = self.get_angle_to_goal()
@@ -311,18 +359,19 @@ class GlobalPlannerNode(Node):
             # Rotate in place
             cmd.angular.z = self.angular_vel if angle_to_goal > 0 else -self.angular_vel
             cmd.linear.x = 0.0
-            self.is_aligned = False
+            
+            angle_deg = abs(math.degrees(angle_to_goal))
+            direction = "right" if angle_to_goal > 0 else "left"
             self.get_logger().info(
-                f'Aligning to goal: angle_error={math.degrees(angle_to_goal):.1f}°',
+                f'🔄 Rotating {angle_deg:.1f}° {direction}',
                 throttle_duration_sec=1.0
             )
         else:
             # Move forward
-            self.is_aligned = True
             cmd.linear.x = self.linear_vel
             cmd.angular.z = 0.0
             self.get_logger().info(
-                f'Moving forward: distance={distance:.2f}m',
+                f'➡️ Moving forward - {distance:.2f}m remaining',
                 throttle_duration_sec=1.0
             )
         
