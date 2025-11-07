@@ -63,10 +63,12 @@ class LocalPlannerNode(Node):
         self.rotation_total = 0.0
         self.rotation_last_yaw = 0.0
         self.rotation_complete = False
+        self.scan_completed_this_waypoint = False  # Only one 360° scan per waypoint
         
         # Tangent movement tracking
         self.chosen_direction = None
         self.clear_timer_start = None
+        self.last_turn_direction = None  # Remember last goal turn direction
         
         # QoS profiles
         qos_reliable = QoSProfile(
@@ -135,15 +137,30 @@ class LocalPlannerNode(Node):
         if msg.data and self.state == PlannerState.IDLE:
             self.get_logger().info('🔧 Local planner activated')
             self.safe_point = (self.current_pose.position.x, self.current_pose.position.y)
-            self.state = PlannerState.ROTATING_360
-            self.rotation_start_yaw = None
-            self.rotation_total = 0.0
-            self.rotation_last_yaw = 0.0
-            self.rotation_complete = False
+            
+            # Check if we already did 360 scan for this waypoint
+            if self.scan_completed_this_waypoint and self.last_turn_direction is not None:
+                # Use opposite direction of last turn
+                self.get_logger().info(f'♻️ Reusing scan - using opposite of last turn ({self.last_turn_direction})')
+                if self.last_turn_direction == "left":
+                    self.chosen_direction = "right"
+                else:
+                    self.chosen_direction = "left"
+                self.state = PlannerState.MOVING_TANGENT
+            else:
+                # First obstacle - do 360 scan
+                self.get_logger().info('🔄 First obstacle - performing 360° scan')
+                self.state = PlannerState.ROTATING_360
+                self.rotation_start_yaw = None
+                self.rotation_total = 0.0
+                self.rotation_last_yaw = 0.0
+                self.rotation_complete = False
     
     def goal_callback(self, msg: PoseStamped):
-        """Update goal pose"""
+        """Update goal pose - reset scan flag for new waypoint"""
         self.goal_pose = msg
+        self.scan_completed_this_waypoint = False  # New waypoint, allow 360 scan again
+        self.last_turn_direction = None  # Clear turn memory for new waypoint
     
     def odom_callback(self, msg: Odometry):
         """Update current pose"""
@@ -241,7 +258,8 @@ class LocalPlannerNode(Node):
             return
         
         self.chosen_direction = turn_direction  # Store "left" or "right"
-        self.get_logger().info(f'✅ Turning {turn_direction}')
+        self.scan_completed_this_waypoint = True  # Mark scan as done for this waypoint
+        self.get_logger().info(f'✅ Turning {turn_direction} (scan complete for this waypoint)')
         self.state = PlannerState.MOVING_TANGENT
     
     def find_better_side(self):
@@ -297,7 +315,7 @@ class LocalPlannerNode(Node):
                 index = grid_y * width + grid_x
                 if index < len(self.global_map.data):
                     cost = self.global_map.data[index]
-                    if cost > 10:  # Hit obstacle
+                    if cost > 50:  # Hit obstacle
                         break
                     right_distance = dist
             else:
@@ -353,6 +371,7 @@ class LocalPlannerNode(Node):
         
         if elapsed >= self.clear_duration:
             self.get_logger().info('✅ 5s clear - checking goal path')
+            self.chosen_direction = None  # Clear the direction after 5s forward
             self.state = PlannerState.CHECKING_GOAL
             self.clear_timer_start = None
             return
@@ -365,13 +384,35 @@ class LocalPlannerNode(Node):
     
     def execute_goal_check(self):
         """Check if direct path to goal is now clear"""
+        # First, turn to face the goal and remember which direction we turned
+        robot_x = self.current_pose.position.x
+        robot_y = self.current_pose.position.y
+        goal_x = self.goal_pose.pose.position.x
+        goal_y = self.goal_pose.pose.position.y
+        
+        goal_dx = goal_x - robot_x
+        goal_dy = goal_y - robot_y
+        goal_angle = math.atan2(goal_dy, goal_dx)
+        
+        current_yaw = self.quaternion_to_yaw(self.current_pose.orientation)
+        angle_diff = self.normalize_angle(goal_angle - current_yaw)
+        
+        # Remember which direction we're turning to face goal
+        if angle_diff > 0:
+            self.last_turn_direction = "left"
+        else:
+            self.last_turn_direction = "right"
+        
+        # Check if path to goal is clear
         if self.check_direct_path_to_goal_clear():
-            self.get_logger().info('✅ Direct path to goal is clear - resuming global planner')
+            self.get_logger().info(f'✅ Direct path to goal clear (turned {self.last_turn_direction} to face goal)')
             self.stop_robot()
             self.signal_global_planner()
         else:
-            self.get_logger().info('⚠️ Goal still blocked - continuing tangential approach')
-            self.state = PlannerState.ANALYZING
+            self.get_logger().info(f'⚠️ Goal blocked (turned {self.last_turn_direction}) - will use opposite next time')
+            # Don't trigger immediately - let global planner handle it
+            self.stop_robot()
+            self.signal_global_planner()
     
     def check_obstacle_ahead(self):
         """Check if obstacle directly ahead in costmap"""
