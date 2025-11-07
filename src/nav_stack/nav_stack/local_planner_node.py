@@ -415,7 +415,7 @@ class LocalPlannerNode(Node):
             self.signal_global_planner()
     
     def check_obstacle_ahead(self):
-        """Check if obstacle directly ahead in costmap"""
+        """Check if obstacle in robot boundary ahead in costmap (swept circle check)"""
         if self.costmap is None:
             return False
         
@@ -429,19 +429,30 @@ class LocalPlannerNode(Node):
         robot_y = self.current_pose.position.y
         current_yaw = self.quaternion_to_yaw(self.current_pose.orientation)
         
-        # Check forward up to 1.5m
-        for dist in np.arange(0.3, 1.5, resolution):
-            check_x = robot_x + dist * math.cos(current_yaw)
-            check_y = robot_y + dist * math.sin(current_yaw)
+        # Check robot boundary (swept circle) forward up to 4m
+        check_distance = 4.0
+        num_samples = int(check_distance / resolution) + 1
+        
+        for i in range(num_samples):
+            dist = i * resolution
+            line_x = robot_x + dist * math.cos(current_yaw)
+            line_y = robot_y + dist * math.sin(current_yaw)
             
-            grid_x = int((check_x - origin_x) / resolution)
-            grid_y = int((check_y - origin_y) / resolution)
-            
-            if 0 <= grid_x < width and 0 <= grid_y < height:
-                index = grid_y * width + grid_x
-                if index < len(self.costmap.data):
-                    if self.costmap.data[index] > self.costmap_threshold:
-                        return True
+            # Check circle around this point (robot boundary)
+            num_circle = 12  # Points around robot boundary
+            for angle_idx in range(num_circle):
+                angle = 2.0 * math.pi * angle_idx / num_circle
+                check_x = line_x + self.robot_radius * math.cos(angle)
+                check_y = line_y + self.robot_radius * math.sin(angle)
+                
+                grid_x = int((check_x - origin_x) / resolution)
+                grid_y = int((check_y - origin_y) / resolution)
+                
+                if 0 <= grid_x < width and 0 <= grid_y < height:
+                    index = grid_y * width + grid_x
+                    if index < len(self.costmap.data):
+                        if self.costmap.data[index] > self.costmap_threshold:
+                            return True
         
         return False
     
