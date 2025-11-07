@@ -323,13 +323,39 @@ class LocalPlannerNode(Node):
         
         self.get_logger().info(f'Left: {left_distance:.2f}m, Right: {right_distance:.2f}m')
         
-        # Return the side with more space
-        if left_distance > right_distance:
+        # Calculate which side is closer to goal direction
+        goal_x = self.goal_pose.pose.position.x
+        goal_y = self.goal_pose.pose.position.y
+        goal_dx = goal_x - robot_x
+        goal_dy = goal_y - robot_y
+        goal_angle = math.atan2(goal_dy, goal_dx)
+        
+        # Calculate angle difference for left and right
+        left_to_goal = abs(self.normalize_angle(left_angle - goal_angle))
+        right_to_goal = abs(self.normalize_angle(right_angle - goal_angle))
+        
+        # Score = free_distance * goal_bias
+        # Give 50% bonus to the side that's closer to goal direction
+        left_score = left_distance * (1.0 if left_to_goal < right_to_goal else 0.7)
+        right_score = right_distance * (1.0 if right_to_goal < left_to_goal else 0.7)
+        
+        self.get_logger().info(f'Scores - Left: {left_score:.2f}, Right: {right_score:.2f}')
+        
+        # Return the side with better score (space + goal bias)
+        if left_score > right_score:
+            self.get_logger().info('→ Choosing LEFT')
             return "left"
-        elif right_distance > left_distance:
+        elif right_score > left_score:
+            self.get_logger().info('→ Choosing RIGHT')
             return "right"
         else:
-            return "left"  # Default to left if equal
+            # Equal scores - prefer the one closer to goal
+            if left_to_goal < right_to_goal:
+                self.get_logger().info('→ Equal, choosing LEFT (closer to goal)')
+                return "left"
+            else:
+                self.get_logger().info('→ Equal, choosing RIGHT (closer to goal)')
+                return "right"
     
     def execute_tangent_movement(self):
         """Rotate left/right and watch costmap for clear path"""
@@ -353,19 +379,25 @@ class LocalPlannerNode(Node):
             self.stop_robot()
             self.get_logger().info('✅ Path clear - starting 5s straight test')
             self.state = PlannerState.STRAIGHT_CLEAR
-            self.clear_timer_start = self.get_clock().now()
+            self.clear_timer_start = None  # Reset timer for fresh start
     
     def execute_straight_clear(self):
         """Move straight for 5 seconds to confirm path is clear"""
+        # Initialize timer on first call
         if self.clear_timer_start is None:
             self.clear_timer_start = self.get_clock().now()
+            # Don't move yet - wait one cycle to verify path is still clear
+            self.get_logger().info('⏸️ Verifying path before moving...')
+            return
         
         elapsed = (self.get_clock().now() - self.clear_timer_start).nanoseconds / 1e9
         
         # Check for obstacles while moving
         if self.check_obstacle_ahead():
-            self.get_logger().warn('⚠️ Obstacle detected during clear test - re-analyzing')
-            self.state = PlannerState.ANALYZING
+            self.get_logger().warn('⚠️ Obstacle detected during clear test - aborting')
+            self.stop_robot()
+            self.state = PlannerState.IDLE
+            self.signal_global_planner()
             self.clear_timer_start = None
             return
         
