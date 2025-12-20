@@ -34,8 +34,8 @@ def generate_launch_description():
             {"database_path": ""},  # Don't save database
         ],
         remappings=[
-            ("scan_cloud", "/rosbot/camera_depth/point_cloud"),
-            ("odom", "/odometry/filtered"),  # External odometry from rosbot
+            ("scan_cloud", "/camera/points"),  # Point cloud topic from depth camera
+            ("odom", "/odom"),  # External odometry from rosbot
             ("grid_map", "/map"),
         ],
         arguments=[
@@ -68,7 +68,7 @@ def generate_launch_description():
         name="base_to_camera_tf",
         arguments=[
             "--frame-id", "base_link",
-            "--child-frame-id", "camera_depth",
+            "--child-frame-id", "camera_link",
             "--x", "0.1",
             "--y", "0.0", 
             "--z", "0.3",

@@ -24,11 +24,11 @@
     # Frame configuration using camera_link as base
     map_frame: map
     odom_frame: odom
-    base_link_frame: camera_link
-    world_frame: odom
+    base_link_frame: base_link
+    world_frame: map
     
     # Odometry input - visual odometry from RTAB-Map
-    odom0: /camera/camera/odom
+    odom0: /odom
     odom0_config: [true,  true,  true,    # x, y, z position
                    false, false, true,    # roll, pitch, yaw orientation
                    true,  true,  true,    # x, y, z linear velocity
@@ -40,7 +40,7 @@
     odom0_relative: false
     
     # IMU input from RealSense D435i
-    imu0: /camera/camera/imu
+    imu0: /imu
     imu0_config: [false, false, false,    # x, y, z position
                   true,  true,  true,     # roll, pitch, yaw orientation
                   false, false, false,    # x, y, z linear velocity
