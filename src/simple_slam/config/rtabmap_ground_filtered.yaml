@@ -48,10 +48,10 @@
     
     # Ground filtering - Key parameters to prevent ground as obstacles
     Grid/GroundIsObstacle: 'false'  # CRITICAL: Ground is NOT an obstacle
-    Grid/MinGroundHeight: '-0.3'    # Accept ground points from -30cm
+    Grid/MinGroundHeight: '-0.05'    # Accept ground points from -30cm
     Grid/MaxGroundHeight: '0.4'     # to +40cm as ground (not obstacles)
     Grid/MaxObstacleHeight: '4.0'   # Only points above 20cm are potential obstacles
-    Grid/MinObstacleHeight: '0.5'   # Minimum height for obstacles (same as max ground)
+    Grid/MinObstacleHeight: '0.4'   # Minimum height for obstacles (same as max ground)
     
     # Normal-based segmentation for better ground detection
     Grid/NormalsSegmentation: 'true'
@@ -82,7 +82,7 @@
     Optimizer/Epsilon: '0.00001'
     
     # Point cloud processing
-    ICP/MaxCorrespondenceDistance: '0.15'  # Increased from 0.1 - match points further apart
+    ICP/MaxCorrespondenceDistance: '0.25'  # Increased from 0.1 - match points further apart
     ICP/PointToPlane: 'true'
     ICP/Iterations: '30'
     ICP/Epsilon: '0.001'
