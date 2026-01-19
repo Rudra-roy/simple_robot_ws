@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+<model name="marsyard2024_terrain">
+  <pose>0 0 0.5 0 0 0 </pose>
+  <static>true</static>
+  <link name="marsyard_terrain">
+    <collision name="collision">
+      <geometry>
+        <mesh>
+          <uri>/home/mt/ros2_ws/src/uirover_description/dae/erc_2024.dae</uri>
+          <!-- Path to dae file -->
+        </mesh>
+      </geometry>
+    </collision>
+    <visual name="visual">
+      <geometry>
+        <mesh>
+          <uri>/home/mt/ros2_ws/src/uirover_description/dae/erc_2024.dae</uri>
+          <!-- Path to dae file -->
+        </mesh>
+      </geometry>
+    </visual>
+  </link>
+</model>
+</sdf>

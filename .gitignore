@@ -3,6 +3,7 @@ build/
 devel/
 install/
 log/
+src/uirover_description/dae/
 
 # IDE files
 .vscode/

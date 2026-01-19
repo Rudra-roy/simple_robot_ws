@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""
+Launch file for Incremental Navigation Stack with RViz
+Uses costmap-only global planner with incremental local planner (20° rotation steps)
+"""
+
+from launch import LaunchDescription
+from launch_ros.actions import Node
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
+from ament_index_python.packages import get_package_share_directory
+import os
+
+
+def generate_launch_description():
+    # Get package directory
+    pkg_dir = get_package_share_directory('nav_stack')
+    
+    # Path to config file
+    config_file = os.path.join(pkg_dir, 'config', 'costmap_planner_params.yaml')
+    rviz_config_file = os.path.join(pkg_dir, 'config', 'costmap_nav_stack.rviz')
+    
+    # Declare launch arguments
+    use_sim_time_arg = DeclareLaunchArgument(
+        'use_sim_time',
+        default_value='false',
+        description='Use simulation time if true'
+    )
+    
+    # Costmap-Only Global Planner Node
+    costmap_global_planner_node = Node(
+        package='nav_stack',
+        executable='costmap_global_planner_node',
+        name='costmap_global_planner_node',
+        output='screen',
+        parameters=[
+            config_file,
+            {'use_sim_time': LaunchConfiguration('use_sim_time')}
+        ],
+        remappings=[
+            # Uses /costmap instead of /map
+        ]
+    )
+    
+    # Incremental Local Planner Node (20° rotation steps)
+    incremental_local_planner_node = Node(
+        package='nav_stack',
+        executable='incremental_local_planner_node',
+        name='incremental_local_planner_node',
+        output='screen',
+        parameters=[
+            config_file,
+            {'use_sim_time': LaunchConfiguration('use_sim_time')}
+        ],
+        remappings=[
+            # Uses /costmap instead of /map
+        ]
+    )
+    
+    # RViz Node
+    rviz_node = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        output='screen',
+        arguments=['-d', rviz_config_file],
+        parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}]
+    )
+    
+    return LaunchDescription([
+        use_sim_time_arg,
+        costmap_global_planner_node,
+        incremental_local_planner_node,
+        rviz_node,
+    ])

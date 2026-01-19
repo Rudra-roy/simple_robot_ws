@@ -1,0 +1,114 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 100  # Hz
+
+    mt_velocity_controller:
+      type: mt_velocity_controller/MTVelocityController
+
+    mt_gazebo_odometry:
+      type: mt_gazebo_odometry/MTGazeboOdometry
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+mt_velocity_controller:
+  ros__parameters:
+    # Wheel Configuration
+    left_wheel_names: ["fl_wheel_joint", "bl_wheel_joint"]
+    right_wheel_names: ["fr_wheel_joint", "br_wheel_joint"]
+    
+    # Physical Parameters
+    wheel_separation: 0.808      # meters - distance between left and right wheels
+    wheel_radius: 0.152          # meters - nominal wheel radius
+    wheel_separation_multiplier: 1.0
+    left_wheel_radius_multiplier: 1.0
+    right_wheel_radius_multiplier: 1.0
+    
+    # Command Settings
+    cmd_vel_timeout: 0.5         # seconds (0 = no timeout)
+    command_topic: "cmd_vel"     # Topic to subscribe to
+    use_stamped_vel: false       # Use TwistStamped instead of Twist
+    
+    # Control Mode
+    open_loop: true              # true = ignore feedback, false = use velocity feedback
+    
+    # Velocity Limits
+    linear:
+      x:
+        has_velocity_limits: true
+        max_velocity: 2.0        # m/s
+        min_velocity: -2.0       # m/s
+        has_acceleration_limits: true
+        max_acceleration: 1.0    # m/s^2
+        min_acceleration: -1.0   # m/s^2
+        has_jerk_limits: false
+        max_jerk: 5.0           # m/s^3
+    
+    angular:
+      z:
+        has_velocity_limits: true
+        max_velocity: 2.0        # rad/s
+        min_velocity: -2.0       # rad/s
+        has_acceleration_limits: true
+        max_acceleration: 1.5    # rad/s^2
+        min_acceleration: -1.5   # rad/s^2
+        has_jerk_limits: false
+        max_jerk: 10.0          # rad/s^3
+    
+    # Experimental Features
+    enable_wheel_slip_compensation: false
+    slip_factor: 0.0             # 0.0 to 1.0
+    
+    # Diagnostics
+    publish_rate: 50.0           # Hz for diagnostics
+    publish_wheel_velocities: true   # Publish computed wheel velocities
+    
+    # Safety
+    enable_safety_stop: true
+    safety_stop_timeout: 1.0     # Stop if no commands for this long (seconds)
+    
+    # Debugging
+    verbose: false               # Enable debug logging
+
+mt_gazebo_odometry:
+  ros__parameters:
+    # Frame IDs
+    odom_frame_id: "odom"
+    base_frame_id: "base_link"
+    
+    # Robot Model
+    robot_model_name: "drubotara"  # Name of the robot model in Gazebo
+    
+    # Topic Subscriptions
+    model_states_topic: "/model_states"  # Gazebo model states topic
+    imu_topic: "/imu"                    # IMU sensor topic
+    
+    # Publishing Settings
+    publish_rate: 50.0           # Hz - odometry publishing rate
+    publish_tf: true             # Publish odom -> base_link TF transform
+    
+    # IMU Integration
+    use_imu_orientation: true    # Use IMU orientation instead of Gazebo orientation
+    
+    # Covariance Settings
+    enable_pose_covariance: true
+    enable_twist_covariance: true
+    
+    # Position covariance (x, y, z) - diagonal values
+    # Small values indicate high confidence from Gazebo ground truth
+    position_covariance: [0.001, 0.001, 0.001]
+    
+    # Orientation covariance (roll, pitch, yaw) - diagonal values
+    # Use IMU noise characteristics if use_imu_orientation is true
+    orientation_covariance: [0.01, 0.01, 0.01]
+    
+    # Linear velocity covariance (vx, vy, vz) - diagonal values
+    # Computed from position differentiation
+    linear_velocity_covariance: [0.01, 0.01, 0.01]
+    
+    # Angular velocity covariance (omega_x, omega_y, omega_z) - diagonal values
+    # Computed from quaternion differentiation
+    angular_velocity_covariance: [0.01, 0.01, 0.01]
+    
+    # Debugging
+    verbose: false               # Enable debug logging

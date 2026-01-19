@@ -1,0 +1,62 @@
+rtabmap:
+  ros__parameters:
+    use_sim_time: true
+    
+    # Frame IDs
+    frame_id: base_link
+    odom_frame_id: odom
+    map_frame_id: map
+    
+    # Topics
+    rgb_topic: /depth_camera/image_raw
+    depth_topic: /depth_camera/depth/image_raw
+    camera_info_topic: /depth_camera/camera_info
+    odom_topic: /diff_drive_controller/odom
+    
+    # RTAB-Map specific parameters
+    queue_size: 30
+    approx_sync: true
+    publish_tf: true
+    wait_for_transform: 0.2
+    
+    # Memory management
+    Mem/RehearsalSimilarity: "0.30"
+    Mem/RecentWmRatio: "0.2"
+    Mem/STMSize: "30"
+    
+    # Loop closure
+    Kp/MaxFeatures: "400"
+    Kp/WordsPerImage: "200"
+    
+    # Visual odometry - DISABLE to use wheel odometry
+    Vis/EstimationType: "0"
+    Vis/FeatureType: "6"
+    Vis/MaxFeatures: "1000"
+    
+    # Use odometry from robot instead of visual odometry
+    Odom/Strategy: "0"
+    
+    # Disable RTABMap's odometry estimation - use external odometry only
+    Odom/ResetCountdown: "1"
+    
+    # Grid map for navigation
+    Grid/FromDepth: "true"
+    Grid/3D: "false"
+    Grid/GroundIsObstacle: "false"
+    Grid/MaxObstacleHeight: "2.0"
+    Grid/MaxGroundHeight: "0.1"
+    Grid/NormalsSegmentation: "false"
+    
+    # Registration
+    Reg/Strategy: "1"
+    Reg/Force3DoF: "true"
+    
+    # Optimization
+    Optimizer/Strategy: "1"
+    Optimizer/Iterations: "20"
+    
+    # RGBD parameters
+    RGBD/NeighborLinkRefining: "true"
+    RGBD/ProximityBySpace: "true"
+    RGBD/AngularUpdate: "0.1"
+    RGBD/LinearUpdate: "0.1"

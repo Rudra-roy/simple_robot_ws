@@ -1,0 +1,10 @@
+<library path="mt_gazebo_odometry">
+  <class name="mt_gazebo_odometry/MTGazeboOdometry"
+         type="mt_gazebo_odometry::MTGazeboOdometry"
+         base_class_type="controller_interface::ControllerInterface">
+    <description>
+      MT Gazebo Odometry - A ros2_control controller that reads pose from Gazebo ground truth,
+      uses IMU orientation, computes velocities, and publishes odometry with TF transforms.
+    </description>
+  </class>
+</library>

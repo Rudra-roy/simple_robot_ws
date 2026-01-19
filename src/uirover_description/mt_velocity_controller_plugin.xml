@@ -1,0 +1,10 @@
+<library path="mt_velocity_controller">
+  <class name="mt_velocity_controller/MTVelocityController"
+         type="mt_velocity_controller::MTVelocityController"
+         base_class_type="controller_interface::ControllerInterface">
+    <description>
+      MT Velocity Controller - A differential drive controller that commands wheel velocities
+      without publishing odometry. Designed to work with external ground truth odometry sources.
+    </description>
+  </class>
+</library>

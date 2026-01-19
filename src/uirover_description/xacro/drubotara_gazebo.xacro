@@ -1,0 +1,103 @@
+<?xml version="1.0"?>
+<robot name="drubotara_rover" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+<xacro:property name="body_color" value="Gazebo/Orange" />
+<xacro:property name="wheel" value="Gazebo/Black" />
+<xacro:property name="antenna_sbg" value="Gazebo/DarkGrey" />
+<xacro:property name="sbg" value="Gazebo/Red" />
+
+
+
+
+
+<gazebo>
+  <plugin name="gazebo_ros2_control" filename="libgazebo_ros2_control.so">
+    <parameters>$(find uirover_description)/config/mt_controllers.yaml</parameters>
+  </plugin>
+</gazebo>
+
+<gazebo reference="base_link">
+  <material>${body_color}</material>
+  <mu1>0.0</mu1>
+  <mu2>0.0</mu2>
+  <selfCollide>false</selfCollide>
+  <gravity>true</gravity>
+</gazebo>
+
+<gazebo reference="wheel_fl">
+  <material>${wheel}</material>
+  <mu1>0.5</mu1>
+  <mu2>0.3</mu2>
+  <kp>100000000.0</kp>
+  <kd>5.0</kd>
+  <minDepth>0.005</minDepth>
+  <maxVel>20.</maxVel>
+  <!-- <fdir1>1 0 0</fdir1> -->
+  <selfCollide>false</selfCollide>
+</gazebo>
+
+<gazebo reference="wheel_fr">
+  <material>${wheel}</material>
+  <mu1>0.5</mu1>
+  <mu2>0.3</mu2>
+  <kp>100000000.0</kp>
+  <kd>5.0</kd>
+  <minDepth>0.005</minDepth>
+  <maxVel>20.0</maxVel>
+  <!-- <fdir1>1 0 0</fdir1> -->
+  <selfCollide>false</selfCollide>
+</gazebo>
+
+<gazebo reference="wheel_bl">
+  <material>${wheel}</material>
+  <mu1>0.5</mu1>
+  <mu2>0.3</mu2>
+  <kp>100000000.0</kp>
+  <kd>5.0</kd>
+  <minDepth>0.005</minDepth>
+  <maxVel>20.0</maxVel>
+  <!-- <fdir1>1 0 0</fdir1> -->
+  <selfCollide>false</selfCollide>
+</gazebo>
+
+<gazebo reference="wheel_br">
+  <material>${wheel}</material>
+  <mu1>0.5</mu1>
+  <mu2>0.3</mu2>
+  <kp>100000000.0</kp>
+  <kd>5.0</kd>
+  <minDepth>0.005</minDepth>
+  <maxVel>20.0</maxVel>
+  <!-- <fdir1>1 0 0</fdir1> -->
+  <selfCollide>false</selfCollide>
+</gazebo>
+
+<gazebo reference="camera_link">
+  <material>${wheel}</material>
+  <mu1>0.1</mu1>
+  <mu2>0.1</mu2>
+  <selfCollide>true</selfCollide>
+</gazebo>
+
+<gazebo reference="imu_link">
+  <material>${sbg}</material>
+  <mu1>0.1</mu1>
+  <mu2>0.1</mu2>
+  <selfCollide>true</selfCollide>
+</gazebo>
+
+<gazebo reference="antenna_1">
+  <material>${antenna_sbg}</material>
+  <mu1>0.1</mu1>
+  <mu2>0.1</mu2>
+  <selfCollide>true</selfCollide>
+</gazebo>
+
+<gazebo reference="antenna_2">
+  <material>${antenna_sbg}</material>
+  <mu1>0.1</mu1>
+  <mu2>0.1</mu2>
+  <selfCollide>true</selfCollide>
+</gazebo>
+
+</robot>

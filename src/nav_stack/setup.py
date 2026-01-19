@@ -14,6 +14,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
+        (os.path.join('share', package_name, 'config'), glob('config/*.rviz')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -30,6 +31,9 @@ setup(
         'console_scripts': [
             'global_planner_node = nav_stack.global_planner_node:main',
             'local_planner_node = nav_stack.local_planner_node:main',
+            'costmap_global_planner_node = nav_stack.costmap_global_planner_node:main',
+            'costmap_local_planner_node = nav_stack.costmap_local_planner_node:main',
+            'incremental_local_planner_node = nav_stack.incremental_local_planner_node:main',
         ],
     },
 )

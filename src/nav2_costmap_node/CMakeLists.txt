@@ -13,11 +13,16 @@ find_package(nav_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(PCL REQUIRED COMPONENTS common filters)
+find_package(pcl_conversions REQUIRED)
 
 add_executable(costmap_node src/costmap_node.cpp)
 target_include_directories(costmap_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>)
+  $<INSTALL_INTERFACE:include>
+  ${PCL_INCLUDE_DIRS})
+
+target_link_libraries(costmap_node ${PCL_LIBRARIES})
 
 ament_target_dependencies(
   costmap_node
@@ -28,6 +33,7 @@ ament_target_dependencies(
   tf2_ros
   tf2_geometry_msgs
   geometry_msgs
+  pcl_conversions
 )
 
 install(TARGETS costmap_node

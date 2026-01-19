@@ -14,26 +14,26 @@ def generate_launch_description():
     # Declare launch arguments
     xacro_file_arg = DeclareLaunchArgument(
         'xacro_file',
-        default_value='/media/mt/vol_2/Rover_sim/Assets/uirover_description/urdf/uirover_sim.urdf.xacro',
+        default_value='/home/mt-labpc/simple_robot_ws/src/uirover_description/urdf/uirover_sim.urdf.xacro',
         description='Path to the robot URDF/xacro file',
     )
     
-    input_topic_arg = DeclareLaunchArgument(
-        'input_topic',
-        default_value='/camera/points_unity',
-        description='Input point cloud topic from Unity'
-    )
+    # input_topic_arg = DeclareLaunchArgument(
+    #     'input_topic',
+    #     default_value='/camera/points_unity',
+    #     description='Input point cloud topic from Unity'
+    # )
     
-    output_topic_arg = DeclareLaunchArgument(
-        'output_topic',
-        default_value='/camera/points',
-        description='Output transformed point cloud topic'
-    )
+    # output_topic_arg = DeclareLaunchArgument(
+    #     'output_topic',
+    #     default_value='/camera/points',
+    #     description='Output transformed point cloud topic'
+    # )
     
     # Get launch configurations
     xacro_file = LaunchConfiguration('xacro_file')
-    input_topic = LaunchConfiguration('input_topic')
-    output_topic = LaunchConfiguration('output_topic')
+    # input_topic = LaunchConfiguration('input_topic')
+    # output_topic = LaunchConfiguration('output_topic')
     
     # Process the xacro file to get robot description
     robot_description_content = Command(['xacro ', xacro_file])
@@ -77,27 +77,27 @@ def generate_launch_description():
     )
     
     # 4. Point Cloud Transform Node
-    pointcloud_transform_node = Node(
-        package='mt_unity_sim',
-        executable='pointcloud_transform_node',
-        name='pointcloud_transform_node',
-        output='screen',
-        parameters=[{
-            'input_topic': input_topic,
-            'output_topic': output_topic,
-            'use_sim_time': True
-        }]
-    )
+    # pointcloud_transform_node = Node(
+    #     package='mt_unity_sim',
+    #     executable='pointcloud_transform_node',
+    #     name='pointcloud_transform_node',
+    #     output='screen',
+    #     parameters=[{
+    #         'input_topic': input_topic,
+    #         'output_topic': output_topic,
+    #         'use_sim_time': True
+    #     }]
+    # )
     
     return LaunchDescription([
         # Arguments
         xacro_file_arg,
-        input_topic_arg,
-        output_topic_arg,
+        # input_topic_arg,
+        # output_topic_arg,
         
         # Nodes and launch files
         ros_tcp_endpoint_launch,
         robot_state_publisher,
         static_tf_publisher,
-        pointcloud_transform_node,
+        # pointcloud_transform_node,
     ])
