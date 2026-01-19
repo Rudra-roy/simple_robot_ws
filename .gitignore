@@ -5,6 +5,14 @@ install/
 log/
 src/uirover_description/dae/
 
+# Obsolete packages (not used in current workspace)
+src/simple_bringup/
+src/simple_clouds/
+src/simple_nav2/
+src/simple_nav2_planner/
+src/simple_navigation/
+src/simple_slam/
+
 # IDE files
 .vscode/
 .idea/
