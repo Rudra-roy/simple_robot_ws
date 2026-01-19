@@ -356,5 +356,5 @@ When contributing to this workspace:
 
 ## Maintainer
 
-Hironmoy Roy Rudra 
-Sub-Team: AI & Autonomous
+**Hironmoy Roy Rudra**  
+*AI & Autonomous Sub-Team*
