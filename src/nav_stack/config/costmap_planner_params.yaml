@@ -1,0 +1,44 @@
+/**:
+  ros__parameters:
+    # Robot physical parameters
+    robot_radius: 0.6          # Robot radius in meters
+    safety_margin: 0.2         # Additional safety margin
+    
+    # Velocity parameters
+    linear_velocity: 1.2       # Global planner linear velocity (m/s)
+    angular_velocity: 4.0      # Global planner angular velocity (rad/s)
+    
+    # Goal tolerances
+    goal_tolerance: 0.5        # Distance tolerance to goal (meters)
+    angular_tolerance: 0.15    # Angular tolerance (radians)
+    
+    # Obstacle detection
+    obstacle_check_distance: 4.0          # How far ahead to check (meters)
+    costmap_obstacle_threshold: 70        # Costmap value threshold (0-100)
+    
+    # Local planner specific
+    min_free_distance: 1.0                # Minimum free space to consider (meters)
+    straight_clear_duration: 5.0          # Time to verify clear path (seconds)
+    tangent_scan_distance: 5.0            # Distance to scan for tangent analysis (meters)
+
+costmap_global_planner_node:
+  ros__parameters:
+    robot_radius: 0.6
+    safety_margin: 0.2
+    linear_velocity: 0.7
+    angular_velocity: 4.0
+    goal_tolerance: 0.5
+    angular_tolerance: 0.15
+    obstacle_check_distance: 4.0
+    costmap_obstacle_threshold: 70
+
+costmap_local_planner_node:
+  ros__parameters:
+    robot_radius: 0.6
+    linear_velocity: 1.2               # Slower for obstacle avoidance
+    angular_velocity: 4.0
+    costmap_obstacle_threshold: 70
+    min_free_distance: 1.0
+    straight_clear_duration: 5.0
+    obstacle_check_distance: 5.0
+    tangent_scan_distance: 5.0

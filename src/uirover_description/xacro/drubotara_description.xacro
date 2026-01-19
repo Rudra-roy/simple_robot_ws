@@ -1,0 +1,275 @@
+<?xml version="1.0"?>
+<robot name="drubotara" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+<xacro:property name="mesh_path" value="package://uirover_description/meshes" />
+
+<link name="base_link">
+  <inertial>
+    <origin xyz="-0.041814202474443105 -0.0019618715262042174 0.6193247013374815" rpy="0 0 0"/>
+    <mass value="36.39044123390723"/>
+    <inertia ixx="6.03199" iyy="7.702627" izz="5.299368" ixy="0.023767" iyz="-0.013389" ixz="1.64321"/>
+  </inertial>
+  <visual>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="${mesh_path}/base_link.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.0 0.0 0.4" rpy="0 0 0"/>
+    <geometry>
+      <box size="1.0 0.8 0.4"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="wheel_fl">
+  <inertial>
+    <origin xyz="3.7696796749253636e-05 -0.013990696409831527 9.916211229921146e-08" rpy="0 0 0"/>
+    <mass value="3.6608099590512784"/>
+    <inertia ixx="0.023653" iyy="0.0409" izz="0.023653" ixy="-4.6e-05" iyz="0.0" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.560952 -0.402778 -0.152136" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="${mesh_path}/wheel_1_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+    <geometry>
+      <cylinder radius="0.152" length="0.1"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="wheel_bl">
+  <inertial>
+    <origin xyz="-0.0001380586105538817 -0.013990286963790344 1.321317391611565e-07" rpy="0 0 0"/>
+    <mass value="3.6608098509080222"/>
+    <inertia ixx="0.023654" iyy="0.040898" izz="0.023653" ixy="0.000171" iyz="0.0" ixz="-0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.417255 -0.402775 -0.152136" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="${mesh_path}/wheel_2_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+    <geometry>
+      <cylinder radius="0.152" length="0.1"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="wheel_fr">
+  <inertial>
+    <origin xyz="3.769679674670012e-05 0.013991269285021646 9.916212437288685e-08" rpy="0 0 0"/>
+    <mass value="3.660809959044042"/>
+    <inertia ixx="0.023653" iyy="0.0409" izz="0.023653" ixy="4.6e-05" iyz="-0.0" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.560952 0.405607 -0.152136" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="${mesh_path}/wheel_3_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+    <geometry>
+      <cylinder radius="0.152" length="0.1"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="wheel_br">
+  <inertial>
+    <origin xyz="-0.00013805861055471436 0.013990859838980463 1.3213175284465528e-07" rpy="0 0 0"/>
+    <mass value="3.6608098509007836"/>
+    <inertia ixx="0.023654" iyy="0.040898" izz="0.023653" ixy="-0.000171" iyz="-0.0" ixz="-0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.417255 0.405604 -0.152136" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="${mesh_path}/wheel_4_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+    <geometry>
+      <cylinder radius="0.152" length="0.1"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="camera_link">
+  <inertial>
+    <origin xyz="-0.0038644930255475884 -0.00046519988354149487 0.014942744960595" rpy="0 0 0"/>
+    <mass value="1.3266544034835752"/>
+    <inertia ixx="0.003059" iyy="0.000258" izz="0.003122" ixy="7e-06" iyz="0.0" ixz="-1e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.4775 0.001498 -0.537" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="${mesh_path}/ZED2i_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.4775 0.001498 -0.537" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="${mesh_path}/ZED2i_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="imu_link">
+  <inertial>
+    <origin xyz="0.2485 0.020914 -0.830149" rpy="0 0 0"/>
+    <mass value="0.1"/>
+    <inertia ixx="0.001" iyy="0.001" izz="0.001" ixy="0.0" iyz="0.0" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.2485 0.020914 -0.830149" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="${mesh_path}/ELLIPSE-D-B-Gen3_v2_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.2485 0.020914 -0.830149" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="${mesh_path}/ELLIPSE-D-B-Gen3_v2_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="gps_link">
+  <inertial>
+    <origin xyz="0.2485 0.020914 -0.830149" rpy="0 0 0"/>
+    <mass value="0.1"/>
+    <inertia ixx="0.001" iyy="0.001" izz="0.001" ixy="0.0" iyz="0.0" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.2485 0.020914 -0.830149" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="${mesh_path}/ELLIPSE-D-B-Gen3_v2_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.2485 0.020914 -0.830149" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="${mesh_path}/ELLIPSE-D-B-Gen3_v2_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="antenna_1">
+  <inertial>
+    <origin xyz="2.275957200481571e-15 -2.1356236129532746e-07 0.0064851534857001125" rpy="0 0 0"/>
+    <mass value="0.013335005852757369"/>
+    <inertia ixx="1e-06" iyy="1e-06" izz="1e-06" ixy="0.0" iyz="0.0" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.3 0.346414 -0.830149" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="${mesh_path}/Antena_1_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.3 0.346414 -0.830149" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="${mesh_path}/Antena_1_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="antenna_2">
+  <inertial>
+    <origin xyz="1.9984014443252818e-15 -2.13562358186703e-07 0.006485153485689454" rpy="0 0 0"/>
+    <mass value="0.013335005852757365"/>
+    <inertia ixx="1e-06" iyy="1e-06" izz="1e-06" ixy="0.0" iyz="-0.0" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.3 -0.343586 -0.830149" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="${mesh_path}/Antena_2_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.3 -0.343586 -0.830149" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="${mesh_path}/Antena_2_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<!-- Joints -->
+<joint name="fl_wheel_joint" type="continuous">
+  <origin xyz="0.560952 0.402778 0.152136" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="wheel_fl"/>
+  <axis xyz="0 1 0"/>
+</joint>
+
+<joint name="fr_wheel_joint" type="continuous">
+  <origin xyz="0.560952 -0.405607 0.152136" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="wheel_fr"/>
+  <axis xyz="0 1 0"/>
+</joint>
+
+<joint name="bl_wheel_joint" type="continuous">
+  <origin xyz="-0.417255 0.402775 0.152136" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="wheel_bl"/>
+  <axis xyz="0 1 0"/>
+</joint>
+
+<joint name="br_wheel_joint" type="continuous">
+  <origin xyz="-0.417255 -0.405604 0.152136" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="wheel_br"/>
+  <axis xyz="0 1 0"/>
+</joint>
+
+<joint name="camera_joint" type="fixed">
+  <origin xyz="0.4775 -0.001498 0.537" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="camera_link"/>
+</joint>
+
+<joint name="imu_joint" type="fixed">
+  <origin xyz="-0.2485 -0.020914 0.830149" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="imu_link"/>
+</joint>
+
+<joint name="gps_joint" type="fixed">
+  <origin xyz="-0.2485 -0.020914 0.830149" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="gps_link"/>
+</joint>
+
+<joint name="antenna_1_joint" type="fixed">
+  <origin xyz="-0.3 -0.346414 0.830149" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="antenna_1"/>
+</joint>
+
+<joint name="antenna_2_joint" type="fixed">
+  <origin xyz="-0.3 0.343586 0.830149" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="antenna_2"/>
+</joint>
+
+</robot>

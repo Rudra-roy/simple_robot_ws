@@ -1,0 +1,49 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 100  # Hz
+
+    mt_gazebo_odometry:
+      type: mt_gazebo_odometry/MTGazeboOdometry
+
+mt_gazebo_odometry:
+  ros__parameters:
+    # Frame IDs
+    odom_frame_id: "odom"
+    base_frame_id: "base_link"
+    
+    # Robot Model
+    robot_model_name: "drubotara"  # Name of the robot model in Gazebo
+    
+    # Topic Subscriptions
+    model_states_topic: "/model_states"  # Gazebo model states topic
+    imu_topic: "/imu"                    # IMU sensor topic
+    
+    # Publishing Settings
+    publish_rate: 50.0           # Hz - odometry publishing rate
+    publish_tf: true             # Publish odom -> base_link TF transform
+    
+    # IMU Integration
+    use_imu_orientation: true    # Use IMU orientation instead of Gazebo orientation
+    
+    # Covariance Settings
+    enable_pose_covariance: true
+    enable_twist_covariance: true
+    
+    # Position covariance (x, y, z) - diagonal values
+    # Small values indicate high confidence from Gazebo ground truth
+    position_covariance: [0.001, 0.001, 0.001]
+    
+    # Orientation covariance (roll, pitch, yaw) - diagonal values
+    # Use IMU noise characteristics if use_imu_orientation is true
+    orientation_covariance: [0.01, 0.01, 0.01]
+    
+    # Linear velocity covariance (vx, vy, vz) - diagonal values
+    # Computed from position differentiation
+    linear_velocity_covariance: [0.01, 0.01, 0.01]
+    
+    # Angular velocity covariance (omega_x, omega_y, omega_z) - diagonal values
+    # Computed from quaternion differentiation
+    angular_velocity_covariance: [0.01, 0.01, 0.01]
+    
+    # Debugging
+    verbose: false               # Enable debug logging
