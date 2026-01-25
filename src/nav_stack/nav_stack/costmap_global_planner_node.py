@@ -8,11 +8,13 @@ No dependency on static /map - works in unknown environments.
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
-from geometry_msgs.msg import PoseStamped, Twist
+from geometry_msgs.msg import PoseStamped, Twist, Point
 from nav_msgs.msg import OccupancyGrid, Odometry
+from sensor_msgs.msg import PointCloud2, PointField
 from std_msgs.msg import Bool, String
 from visualization_msgs.msg import Marker
 import math
+import struct
 
 
 class CostmapGlobalPlannerNode(Node):
@@ -90,15 +92,28 @@ class CostmapGlobalPlannerNode(Node):
         # Publishers
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         
+        # Visualization publishers
+        self.robot_boundary_pub = self.create_publisher(
+            PointCloud2,
+            '/costmap_global/robot_boundary_cloud',
+            10
+        )
+        
         self.path_marker_pub = self.create_publisher(
             Marker,
-            '/planned_path_marker',
+            '/costmap_global/planned_path_marker',
             10
         )
         
         self.goal_marker_pub = self.create_publisher(
             Marker,
-            '/goal_marker',
+            '/costmap_global/goal_marker',
+            10
+        )
+        
+        self.obstacle_check_pub = self.create_publisher(
+            Marker,
+            '/costmap_global/obstacle_check_zone',
             10
         )
         
@@ -156,9 +171,9 @@ class CostmapGlobalPlannerNode(Node):
             if abs(angle_to_goal) > self.angular_tolerance:
                 direction = "LEFT" if angle_to_goal > 0 else "RIGHT"
                 angle_deg = abs(math.degrees(angle_to_goal))
-                self.get_logger().info(f'🔄 Rotate {direction} {angle_deg:.1f}° to align')
+                self.get_logger().info(f'Rotate {direction} {angle_deg:.1f}° to align')
             else:
-                self.get_logger().info(f'➡ Move forward {distance:.2f}m to goal')
+                self.get_logger().info(f'Move forward {distance:.2f}m to goal')
     
     def planner_state_callback(self, msg: String):
         """Listen to planner state changes"""
@@ -331,17 +346,17 @@ class CostmapGlobalPlannerNode(Node):
             if abs(angle_to_goal) > self.angular_tolerance:
                 direction = "LEFT" if angle_to_goal > 0 else "RIGHT"
                 angle_deg = abs(math.degrees(angle_to_goal))
-                self.get_logger().info(f'🔄 Rotate {direction} {angle_deg:.1f}°')
+                self.get_logger().info(f'Rotate {direction} {angle_deg:.1f}°')
                 self.last_instruction_time = current_time
             else:
-                self.get_logger().info(f'✓ Aligned to goal, switching to forward')
+                self.get_logger().info(f'Aligned to goal, switching to forward')
                 self.last_instruction_time = current_time
         else:
             if abs(angle_to_goal) > self.angular_tolerance * 2:
-                self.get_logger().info(f'⚠ Re-aligning needed')
+                self.get_logger().info(f'Re-aligning needed')
                 self.last_instruction_time = current_time
             else:
-                self.get_logger().info(f'➡ Move forward {distance:.2f}m to goal')
+                self.get_logger().info(f'Move forward {distance:.2f}m to goal')
                 self.last_instruction_time = current_time
     
     def control_loop(self):
@@ -415,8 +430,165 @@ class CostmapGlobalPlannerNode(Node):
     
     def publish_visualizations(self):
         """Publish visualization markers"""
+        self.publish_robot_boundary()
         if self.goal_pose is not None:
+            self.publish_path_to_goal()
             self.publish_goal_marker()
+            self.publish_obstacle_check_zone()
+    
+    def publish_robot_boundary(self):
+        """Publish point cloud circle around robot boundary"""
+        if self.current_pose is None:
+            return
+        
+        try:
+            # Generate circle of points at 0.3m radius
+            num_points = 360  # Dense circle (every 1 degree)
+            radius = 0.3  # 0.3m radius
+            
+            # Get robot's current position
+            robot_x = self.current_pose.position.x
+            robot_y = self.current_pose.position.y
+            
+            # Generate circle points in odom frame
+            points = []
+            for i in range(num_points):
+                angle = 2.0 * math.pi * i / num_points
+                x = robot_x + radius * math.cos(angle)
+                y = robot_y + radius * math.sin(angle)
+                z = 0.0
+                points.append([x, y, z])
+            
+            # Create PointCloud2 message
+            cloud_msg = PointCloud2()
+            cloud_msg.header.frame_id = "odom"
+            cloud_msg.header.stamp = self.get_clock().now().to_msg()
+            
+            # Define point cloud fields (x, y, z)
+            cloud_msg.fields = [
+                PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+                PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+                PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
+            ]
+            
+            cloud_msg.is_bigendian = False
+            cloud_msg.point_step = 12  # 3 floats * 4 bytes
+            cloud_msg.row_step = cloud_msg.point_step * len(points)
+            cloud_msg.is_dense = True
+            cloud_msg.height = 1
+            cloud_msg.width = len(points)
+            
+            # Pack point data
+            buffer = []
+            for point in points:
+                buffer.append(struct.pack('fff', point[0], point[1], point[2]))
+            
+            cloud_msg.data = b''.join(buffer)
+            
+            self.robot_boundary_pub.publish(cloud_msg)
+        except Exception as e:
+            self.get_logger().error(f'Failed to publish boundary cloud: {e}')
+    
+    def publish_path_to_goal(self):
+        """Publish line strip showing path from robot to goal"""
+        if self.current_pose is None or self.goal_pose is None:
+            return
+        
+        marker = Marker()
+        marker.header.frame_id = "odom"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "costmap_global_path"
+        marker.id = 1
+        marker.type = Marker.LINE_STRIP
+        marker.action = Marker.ADD
+        
+        # Start point (robot position)
+        start_point = Point()
+        start_point.x = self.current_pose.position.x
+        start_point.y = self.current_pose.position.y
+        start_point.z = 0.1  # Slightly above ground
+        marker.points.append(start_point)
+        
+        # End point (goal position)
+        end_point = Point()
+        end_point.x = self.goal_pose.pose.position.x
+        end_point.y = self.goal_pose.pose.position.y
+        end_point.z = 0.1
+        marker.points.append(end_point)
+        
+        # Line properties
+        marker.scale.x = 0.05  # Line width
+        
+        # Color (bright green if clear, yellow if obstacle)
+        if self.obstacle_detected:
+            marker.color.r = 1.0
+            marker.color.g = 1.0
+            marker.color.b = 0.0
+            marker.color.a = 1.0
+        else:
+            marker.color.r = 0.0
+            marker.color.g = 1.0
+            marker.color.b = 0.0
+            marker.color.a = 1.0
+        
+        marker.lifetime.sec = 0
+        marker.lifetime.nanosec = 0
+        
+        self.path_marker_pub.publish(marker)
+    
+    def publish_obstacle_check_zone(self):
+        """Publish obstacle detection zone visualization"""
+        if self.current_pose is None or self.goal_pose is None:
+            return
+        
+        marker = Marker()
+        marker.header.frame_id = "odom"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "costmap_obstacle_check"
+        marker.id = 2
+        marker.type = Marker.ARROW
+        marker.action = Marker.ADD
+        
+        # Calculate direction to goal
+        dx = self.goal_pose.pose.position.x - self.current_pose.position.x
+        dy = self.goal_pose.pose.position.y - self.current_pose.position.y
+        distance = math.sqrt(dx*dx + dy*dy)
+        
+        if distance < 0.01:
+            return
+        
+        # Arrow from robot position toward goal
+        marker.pose.position.x = self.current_pose.position.x
+        marker.pose.position.y = self.current_pose.position.y
+        marker.pose.position.z = 0.15
+        
+        # Orientation toward goal
+        angle = math.atan2(dy, dx)
+        marker.pose.orientation.z = math.sin(angle / 2.0)
+        marker.pose.orientation.w = math.cos(angle / 2.0)
+        
+        # Arrow size (length = obstacle_check_distance)
+        check_length = min(self.obstacle_check_distance, distance)
+        marker.scale.x = check_length  # Length
+        marker.scale.y = 0.08  # Width
+        marker.scale.z = 0.08  # Height
+        
+        # Color: Red if obstacle detected, cyan if clear
+        if self.obstacle_detected:
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 0.0
+            marker.color.a = 0.7
+        else:
+            marker.color.r = 0.0
+            marker.color.g = 1.0
+            marker.color.b = 1.0
+            marker.color.a = 0.5
+        
+        marker.lifetime.sec = 0
+        marker.lifetime.nanosec = 0
+        
+        self.obstacle_check_pub.publish(marker)
     
     def publish_goal_marker(self):
         """Publish goal marker"""

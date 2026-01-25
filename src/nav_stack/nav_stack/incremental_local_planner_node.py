@@ -8,9 +8,10 @@ Analyzes -120° to +120° range for safe direction with goal bias.
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
-from geometry_msgs.msg import PoseStamped, Twist
+from geometry_msgs.msg import PoseStamped, Twist, Point
 from nav_msgs.msg import OccupancyGrid, Odometry
 from std_msgs.msg import Bool, String
+from visualization_msgs.msg import Marker
 import math
 import numpy as np
 from enum import Enum
@@ -67,6 +68,12 @@ class IncrementalLocalPlannerNode(Node):
         # Forward movement tracking
         self.forward_timer_start = None
         
+        # Starting position for visualization
+        self.starting_position = None
+        
+        # Scan ray data for visualization
+        self.scan_ray_data = []  # List of (angle, free_distance) tuples
+        
         # Instruction printing
         self.last_instruction_time = None
         
@@ -116,9 +123,47 @@ class IncrementalLocalPlannerNode(Node):
         self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.planner_state_pub = self.create_publisher(String, '/costmap_planner_state', 10)
         
+        # Visualization publishers
+        self.scan_rays_pub = self.create_publisher(
+            Marker,
+            '/incremental_local/scan_directions',
+            10
+        )
+        
+        self.chosen_direction_pub = self.create_publisher(
+            Marker,
+            '/incremental_local/chosen_direction',
+            10
+        )
+        
+        self.rotation_progress_pub = self.create_publisher(
+            Marker,
+            '/incremental_local/rotation_progress',
+            10
+        )
+        
+        self.forward_path_pub = self.create_publisher(
+            Marker,
+            '/incremental_local/forward_path_preview',
+            10
+        )
+        
+        self.starting_position_pub = self.create_publisher(
+            Marker,
+            '/incremental_local/starting_position',
+            10
+        )
+        
+        self.goal_bias_pub = self.create_publisher(
+            Marker,
+            '/incremental_local/goal_bias_arrow',
+            10
+        )
+        
         # Timer for state machine
         self.create_timer(0.1, self.state_machine_loop)
         self.create_timer(0.5, self.print_movement_instruction)
+        self.create_timer(0.2, self.publish_visualizations)
         
         self.get_logger().info('Incremental Local Planner initialized')
         self.get_logger().info('20° rotation increments, 2s forward, 120° limit')
@@ -128,6 +173,7 @@ class IncrementalLocalPlannerNode(Node):
         if msg.data and self.state == PlannerState.IDLE:
             self.get_logger().info('Local planner activated - analyzing direction')
             self.starting_yaw = self.quaternion_to_yaw(self.current_pose.orientation)
+            self.starting_position = (self.current_pose.position.x, self.current_pose.position.y)
             self.current_rotation_count = 0.0
             self.has_tried_opposite = False
             self.state = PlannerState.ANALYZING
@@ -275,12 +321,18 @@ class IncrementalLocalPlannerNode(Node):
         left_score = 0.0
         right_score = 0.0
         
+        # Clear previous scan data
+        self.scan_ray_data = []
+        
         for relative_angle in angle_samples:
             scan_angle = current_yaw + relative_angle
             
             # Measure free distance in this direction
             free_distance = self.measure_free_distance(scan_angle, robot_x, robot_y, 
                                                       origin_x, origin_y, resolution, width, height)
+            
+            # Store for visualization
+            self.scan_ray_data.append((scan_angle, free_distance))
             
             # Calculate goal alignment score
             angle_to_goal = abs(self.normalize_angle(scan_angle - goal_angle))
@@ -381,7 +433,7 @@ class IncrementalLocalPlannerNode(Node):
             
             # Check if path ahead is clear
             if self.check_path_clear():
-                self.get_logger().info('✓ Path clear - moving forward for 2s')
+                self.get_logger().info('Path clear - moving forward for 2s')
                 self.forward_timer_start = self.get_clock().now()
                 self.state = PlannerState.MOVING_FORWARD
                 return
@@ -390,7 +442,7 @@ class IncrementalLocalPlannerNode(Node):
             self.current_rotation_count += self.rotation_increment
             
             if self.current_rotation_count >= self.max_rotation_angle:
-                self.get_logger().warn(f'⚠ 120° limit reached on {self.chosen_direction} side')
+                self.get_logger().warn(f'120° limit reached on {self.chosen_direction} side')
                 
                 if not self.has_tried_opposite:
                     self.get_logger().info('Returning to start and trying opposite direction')
@@ -401,7 +453,7 @@ class IncrementalLocalPlannerNode(Node):
                 return
             
             # Continue rotating - set next target
-            self.get_logger().info('⚠ Obstacle found - rotating another 20°')
+            self.get_logger().info('Obstacle found - rotating another 20°')
             self.set_next_rotation_target()
             return
         
@@ -476,7 +528,7 @@ class IncrementalLocalPlannerNode(Node):
         """
         # Check for obstacles
         if not self.check_path_clear():
-            self.get_logger().warn('⚠ Obstacle detected during forward movement')
+            self.get_logger().warn('Obstacle detected during forward movement')
             # Reset rotation count and try again from current position
             self.starting_yaw = self.quaternion_to_yaw(self.current_pose.orientation)
             self.current_rotation_count = 0.0
@@ -487,7 +539,7 @@ class IncrementalLocalPlannerNode(Node):
         elapsed = (self.get_clock().now() - self.forward_timer_start).nanoseconds / 1e9
         
         if elapsed >= self.forward_duration:
-            self.get_logger().info('✓ 2 seconds completed - returning to global planner')
+            self.get_logger().info('2 seconds completed - returning to global planner')
             self.signal_global_planner()
             return
         
@@ -511,7 +563,7 @@ class IncrementalLocalPlannerNode(Node):
             cmd = Twist()
             self.cmd_vel_pub.publish(cmd)
             
-            self.get_logger().info('✓ Returned to starting orientation')
+            self.get_logger().info('Returned to starting orientation')
             
             # Switch direction
             self.chosen_direction = "right" if self.chosen_direction == "left" else "left"
@@ -555,17 +607,329 @@ class IncrementalLocalPlannerNode(Node):
         self.state = PlannerState.IDLE
         self.chosen_direction = None
         self.starting_yaw = None
+        self.starting_position = None
         self.current_rotation_count = 0.0
         self.target_yaw = None
         self.forward_timer_start = None
         self.has_tried_opposite = False
         self.rotation_start_time = None
         self.rotation_start_yaw = None
+        self.scan_ray_data = []
         
         # Publish state
         state_msg = String()
         state_msg.data = "global_active"
         self.planner_state_pub.publish(state_msg)
+    
+    def publish_visualizations(self):
+        """Publish all visualization markers"""
+        if self.current_pose is None:
+            return
+        
+        # Always publish if we have data
+        if len(self.scan_ray_data) > 0:
+            self.publish_scan_rays()
+        
+        if self.chosen_direction is not None:
+            self.publish_chosen_direction()
+            self.publish_rotation_progress()
+        
+        if self.state == PlannerState.MOVING_FORWARD or self.state == PlannerState.ROTATING:
+            self.publish_forward_path()
+        
+        if self.starting_position is not None:
+            self.publish_starting_position()
+        
+        if self.goal_pose is not None:
+            self.publish_goal_bias()
+    
+    def publish_scan_rays(self):
+        """Publish scan direction rays as LINE_LIST"""
+        if self.current_pose is None or len(self.scan_ray_data) == 0:
+            return
+        
+        marker = Marker()
+        marker.header.frame_id = "odom"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "scan_directions"
+        marker.id = 0
+        marker.type = Marker.LINE_LIST
+        marker.action = Marker.ADD
+        
+        robot_x = self.current_pose.position.x
+        robot_y = self.current_pose.position.y
+        
+        # Create line segments for each ray
+        for angle, free_distance in self.scan_ray_data:
+            # Start point (robot position)
+            start = Point()
+            start.x = robot_x
+            start.y = robot_y
+            start.z = 0.05
+            marker.points.append(start)
+            
+            # End point (free distance along ray)
+            end = Point()
+            end.x = robot_x + free_distance * math.cos(angle)
+            end.y = robot_y + free_distance * math.sin(angle)
+            end.z = 0.05
+            marker.points.append(end)
+            
+            # Color based on free distance (gradient from red to green)
+            color_value = min(free_distance / self.obstacle_check_distance, 1.0)
+            marker.colors.append(self._create_color(1.0 - color_value, color_value, 0.0, 0.6))
+            marker.colors.append(self._create_color(1.0 - color_value, color_value, 0.0, 0.6))
+        
+        marker.scale.x = 0.02  # Line width
+        marker.lifetime.sec = 0
+        marker.lifetime.nanosec = 0
+        
+        self.scan_rays_pub.publish(marker)
+    
+    def publish_chosen_direction(self):
+        """Publish large arrow showing chosen turn direction"""
+        if self.current_pose is None or self.chosen_direction is None:
+            return
+        
+        marker = Marker()
+        marker.header.frame_id = "odom"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "chosen_direction"
+        marker.id = 1
+        marker.type = Marker.ARROW
+        marker.action = Marker.ADD
+        
+        current_yaw = self.quaternion_to_yaw(self.current_pose.orientation)
+        
+        # Arrow pointing in chosen direction (90 degrees left or right)
+        if self.chosen_direction == "left":
+            direction_angle = current_yaw + math.pi / 2
+            marker.color.r = 0.0
+            marker.color.g = 0.5
+            marker.color.b = 1.0  # Blue
+        else:
+            direction_angle = current_yaw - math.pi / 2
+            marker.color.r = 1.0
+            marker.color.g = 0.5
+            marker.color.b = 0.0  # Orange
+        
+        marker.pose.position.x = self.current_pose.position.x
+        marker.pose.position.y = self.current_pose.position.y
+        marker.pose.position.z = 0.3  # Raised for visibility
+        
+        marker.pose.orientation.z = math.sin(direction_angle / 2.0)
+        marker.pose.orientation.w = math.cos(direction_angle / 2.0)
+        
+        marker.scale.x = 1.5  # Length
+        marker.scale.y = 0.15  # Width
+        marker.scale.z = 0.15  # Height
+        marker.color.a = 0.9
+        
+        marker.lifetime.sec = 0
+        marker.lifetime.nanosec = 0
+        
+        self.chosen_direction_pub.publish(marker)
+    
+    def publish_rotation_progress(self):
+        """Publish arc showing rotation progress toward 120 degree limit"""
+        if self.current_pose is None or self.starting_yaw is None:
+            return
+        
+        marker = Marker()
+        marker.header.frame_id = "odom"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "rotation_progress"
+        marker.id = 2
+        marker.type = Marker.LINE_STRIP
+        marker.action = Marker.ADD
+        
+        robot_x = self.current_pose.position.x
+        robot_y = self.current_pose.position.y
+        arc_radius = 1.0
+        
+        # Draw arc from starting yaw to current rotation
+        num_segments = 20
+        rotation_fraction = self.current_rotation_count / self.max_rotation_angle
+        
+        if self.chosen_direction == "left":
+            angle_start = self.starting_yaw
+            angle_end = self.starting_yaw + self.current_rotation_count
+        else:
+            angle_start = self.starting_yaw
+            angle_end = self.starting_yaw - self.current_rotation_count
+        
+        for i in range(num_segments + 1):
+            t = i / num_segments
+            angle = angle_start + t * (angle_end - angle_start)
+            
+            point = Point()
+            point.x = robot_x + arc_radius * math.cos(angle)
+            point.y = robot_y + arc_radius * math.sin(angle)
+            point.z = 0.2
+            marker.points.append(point)
+        
+        marker.scale.x = 0.05  # Line width
+        
+        # Color gradient: green -> yellow -> red as approaching limit
+        if rotation_fraction < 0.5:
+            marker.color.r = 0.0
+            marker.color.g = 1.0
+            marker.color.b = 0.0
+        elif rotation_fraction < 0.8:
+            marker.color.r = 1.0
+            marker.color.g = 1.0
+            marker.color.b = 0.0
+        else:
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 0.0
+        marker.color.a = 0.8
+        
+        marker.lifetime.sec = 0
+        marker.lifetime.nanosec = 0
+        
+        self.rotation_progress_pub.publish(marker)
+    
+    def publish_forward_path(self):
+        """Publish line showing predicted forward trajectory"""
+        if self.current_pose is None:
+            return
+        
+        marker = Marker()
+        marker.header.frame_id = "odom"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "forward_path"
+        marker.id = 3
+        marker.type = Marker.LINE_STRIP
+        marker.action = Marker.ADD
+        
+        current_yaw = self.quaternion_to_yaw(self.current_pose.orientation)
+        robot_x = self.current_pose.position.x
+        robot_y = self.current_pose.position.y
+        
+        # Predict forward movement for 2 seconds
+        prediction_distance = self.linear_vel * self.forward_duration
+        num_points = 10
+        
+        for i in range(num_points + 1):
+            t = i / num_points
+            dist = t * prediction_distance
+            
+            point = Point()
+            point.x = robot_x + dist * math.cos(current_yaw)
+            point.y = robot_y + dist * math.sin(current_yaw)
+            point.z = 0.15
+            marker.points.append(point)
+        
+        marker.scale.x = 0.04  # Line width
+        
+        # Color: cyan during rotation, green during forward movement
+        if self.state == PlannerState.MOVING_FORWARD:
+            marker.color.r = 0.0
+            marker.color.g = 1.0
+            marker.color.b = 0.0
+        else:
+            marker.color.r = 0.0
+            marker.color.g = 1.0
+            marker.color.b = 1.0
+        marker.color.a = 0.7
+        
+        marker.lifetime.sec = 0
+        marker.lifetime.nanosec = 0
+        
+        self.forward_path_pub.publish(marker)
+    
+    def publish_starting_position(self):
+        """Publish marker at starting position when planner was triggered"""
+        if self.starting_position is None:
+            return
+        
+        marker = Marker()
+        marker.header.frame_id = "odom"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "starting_position"
+        marker.id = 4
+        marker.type = Marker.CYLINDER
+        marker.action = Marker.ADD
+        
+        marker.pose.position.x = self.starting_position[0]
+        marker.pose.position.y = self.starting_position[1]
+        marker.pose.position.z = 0.0
+        marker.pose.orientation.w = 1.0
+        
+        marker.scale.x = 0.6  # Diameter
+        marker.scale.y = 0.6
+        marker.scale.z = 0.05  # Height (thin disk)
+        
+        marker.color.r = 1.0
+        marker.color.g = 1.0
+        marker.color.b = 0.0
+        marker.color.a = 0.4
+        
+        marker.lifetime.sec = 0
+        marker.lifetime.nanosec = 0
+        
+        self.starting_position_pub.publish(marker)
+    
+    def publish_goal_bias(self):
+        """Publish arrow from robot toward goal showing goal bias"""
+        if self.current_pose is None or self.goal_pose is None:
+            return
+        
+        marker = Marker()
+        marker.header.frame_id = "odom"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "goal_bias"
+        marker.id = 5
+        marker.type = Marker.ARROW
+        marker.action = Marker.ADD
+        
+        robot_x = self.current_pose.position.x
+        robot_y = self.current_pose.position.y
+        goal_x = self.goal_pose.pose.position.x
+        goal_y = self.goal_pose.pose.position.y
+        
+        dx = goal_x - robot_x
+        dy = goal_y - robot_y
+        distance = math.sqrt(dx*dx + dy*dy)
+        
+        if distance < 0.01:
+            return
+        
+        goal_angle = math.atan2(dy, dx)
+        
+        marker.pose.position.x = robot_x
+        marker.pose.position.y = robot_y
+        marker.pose.position.z = 0.25
+        
+        marker.pose.orientation.z = math.sin(goal_angle / 2.0)
+        marker.pose.orientation.w = math.cos(goal_angle / 2.0)
+        
+        # Arrow length proportional to distance (max 2m)
+        arrow_length = min(distance * 0.5, 2.0)
+        marker.scale.x = arrow_length
+        marker.scale.y = 0.1
+        marker.scale.z = 0.1
+        
+        marker.color.r = 1.0
+        marker.color.g = 0.0
+        marker.color.b = 1.0  # Magenta
+        marker.color.a = 0.5
+        
+        marker.lifetime.sec = 0
+        marker.lifetime.nanosec = 0
+        
+        self.goal_bias_pub.publish(marker)
+    
+    def _create_color(self, r, g, b, a):
+        """Helper to create ColorRGBA for marker colors"""
+        from std_msgs.msg import ColorRGBA
+        color = ColorRGBA()
+        color.r = r
+        color.g = g
+        color.b = b
+        color.a = a
+        return color
 
 
 def main(args=None):

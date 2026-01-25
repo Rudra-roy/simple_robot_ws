@@ -66,14 +66,59 @@ Tangential approach: 360° rotation → free direction analysis → tangent move
 
 ## Visualization
 
-The package publishes a **robot boundary circle** visualization that appears in RViz2:
-- **Frame**: base_link
-- **Topic**: /robot_boundary
-- **Type**: Cylinder marker (thin disk)
-- **Color**: Semi-transparent blue
-- **Size**: (robot_radius + safety_margin) * 2
+The package publishes extensive **visualization markers** for RViz2:
 
-This circle defines the robot's virtual limits for safe navigation.
+### Global Planner Visualizations
+- **Robot Boundary Cloud** (`/costmap_global/robot_boundary_cloud`)
+  - PointCloud2 showing 0.3m radius circle around robot
+  - Frame: odom
+  - Updates at 5Hz
+  
+- **Planned Path Line** (`/costmap_global/planned_path_marker`)
+  - LINE_STRIP from robot to goal
+  - Color: Green (clear path) or Yellow (obstacle detected)
+  - Shows direct navigation path
+
+- **Obstacle Check Zone** (`/costmap_global/obstacle_check_zone`)
+  - ARROW showing 4m obstacle detection ray
+  - Color: Cyan (clear) or Red (obstacle detected)
+  - Indicates forward-looking collision detection
+
+- **Goal Marker** (`/costmap_global/goal_marker`)
+  - Green SPHERE at goal position
+  - Size: 0.5m diameter
+
+### Local Planner Visualizations
+- **Scan Direction Rays** (`/incremental_local/scan_directions`)
+  - LINE_LIST showing -120 to +120 degree scan range
+  - 25 rays color-coded by free distance
+  - Color gradient: Red (blocked) to Green (clear)
+  - Shows direction analysis during ANALYZING state
+
+- **Chosen Direction Arrow** (`/incremental_local/chosen_direction`)
+  - Large ARROW (1.5m) pointing in selected turn direction
+  - Color: Blue (left) or Orange (right)
+  - Shows active avoidance strategy
+
+- **Rotation Progress** (`/incremental_local/rotation_progress`)
+  - LINE_STRIP arc showing accumulated rotation
+  - Color: Green (< 60 degrees) to Yellow (60-96 degrees) to Red (> 96 degrees)
+  - Displays progress toward 120 degree rotation limit
+
+- **Forward Path Preview** (`/incremental_local/forward_path_preview`)
+  - LINE_STRIP showing predicted 2-second trajectory
+  - Color: Cyan (rotation phase) or Green (forward movement)
+  - Shows planned forward movement path
+
+- **Starting Position** (`/incremental_local/starting_position`)
+  - Yellow CYLINDER (disk) at trigger location
+  - Semi-transparent marker showing where local planner was activated
+  - Reference point for return-to-start behavior
+
+- **Goal Bias Arrow** (`/incremental_local/goal_bias_arrow`)
+  - Magenta ARROW from robot toward goal
+  - Semi-transparent, length proportional to goal distance (max 2m)
+  - Shows goal bias influence on direction selection
 
 ## Installation
 
@@ -119,10 +164,25 @@ rviz2
 2. Add the following displays:
    - **RobotModel**: To see the robot URDF
    - **Map**: Subscribe to `/costmap` topic
-   - **Marker**: Subscribe to `/robot_boundary` topic
    - **TF**: To see coordinate frames
+   
+   **Global Planner Markers:**
+   - **PointCloud2**: Subscribe to `/costmap_global/robot_boundary_cloud`
+   - **Marker**: Subscribe to `/costmap_global/planned_path_marker`
+   - **Marker**: Subscribe to `/costmap_global/obstacle_check_zone`
+   - **Marker**: Subscribe to `/costmap_global/goal_marker`
+   
+   **Local Planner Markers:**
+   - **Marker**: Subscribe to `/incremental_local/scan_directions`
+   - **Marker**: Subscribe to `/incremental_local/chosen_direction`
+   - **Marker**: Subscribe to `/incremental_local/rotation_progress`
+   - **Marker**: Subscribe to `/incremental_local/forward_path_preview`
+   - **Marker**: Subscribe to `/incremental_local/starting_position`
+   - **Marker**: Subscribe to `/incremental_local/goal_bias_arrow`
 
-3. Set **Fixed Frame** to `map` or `odom`
+3. Set **Fixed Frame** to `odom`
+
+**Pro Tip**: Group all `/costmap_global/*` markers in one RViz Display Group and all `/incremental_local/*` markers in another for easy toggling.
 
 ## Configuration
 
