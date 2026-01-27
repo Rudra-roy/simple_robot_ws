@@ -11,6 +11,7 @@ This workspace provides a costmap-only navigation stack for mobile robots operat
 - **mt_unity_sim** - Unity-ROS2 TCP communication bridge and robot state publisher
 - **nav2_costmap_node** - Layered costmap generator with ray tracing for obstacle detection
 - **nav_stack** - Costmap-based reactive navigation planners (global and local)
+- **mission_manager** - Sequential waypoint navigation with task-specific routing
 - **uirover_description** - Robot URDF/xacro description files
 
 ## Prerequisites
@@ -169,6 +170,40 @@ ros2 topic pub --once /goal_pose geometry_msgs/msg/PoseStamped "{
 
 Or use RViz's **2D Nav Goal** tool when running with visualization.
 
+## Mission-Based Navigation
+
+For sequential waypoint missions with task-specific actions, use the Mission Manager:
+
+### Launch Mission Manager
+
+```bash
+ros2 launch mission_manager mission_manager.launch.py
+```
+
+### Send Waypoint Mission
+
+```bash
+ros2 topic pub --once /waypoints nav_msgs/Path "{
+  header: {frame_id: 'map'},
+  poses: [
+    {header: {frame_id: 'GNSS_start'}, pose: {position: {x: 1.0, y: 0.0}, orientation: {w: 1.0}}},
+    {header: {frame_id: 'Aruco_marker'}, pose: {position: {x: 5.0, y: 2.0}, orientation: {w: 1.0}}},
+    {header: {frame_id: 'Mallet_pickup'}, pose: {position: {x: 8.0, y: 3.0}, orientation: {w: 1.0}}},
+    {header: {frame_id: 'GNSS_end'}, pose: {position: {x: 10.0, y: 0.0}, orientation: {w: 1.0}}}
+  ]
+}"
+```
+
+### Waypoint Types
+
+| Keyword | Action on Goal Reach |
+|---------|---------------------|
+| `GNSS` | Proceed to next waypoint |
+| `Aruco` | Signal ArUco detection via `/aruco` |
+| `Mallet` | Signal mallet handling via `/mallet` |
+| `Bottle` | Signal bottle handling via `/bottle` |
+| `Rock Pick` | Signal rock picking via `/rock_pick` |
+
 ## Usage
 
 ### Complete Unity Simulation Workflow
@@ -182,6 +217,7 @@ Follow the **Getting Started with Unity Simulation** section above for the compl
 3. **Verify Topics**: `ros2 topic list`
 4. **Costmap**: `ros2 launch nav2_costmap_node costmap.launch.py`
 5. **Navigation**: `ros2 launch nav_stack costmap_nav_stack.launch.py`
+6. **Mission Manager** (optional): `ros2 launch mission_manager mission_manager.launch.py`
 
 ### Alternative Launch Configurations
 
@@ -271,6 +307,16 @@ Reactive navigation planners that work without pre-built maps.
 - Tangential local obstacle avoidance
 - Multiple planning modes (standard, incremental)
 - Real-time path adjustment
+- Waypoint type routing for task coordination
+
+### mission_manager
+Sequential waypoint mission coordination.
+
+**Key Features:**
+- Receives waypoint lists via `/waypoints` topic
+- Sequential waypoint execution
+- Task-specific routing based on waypoint names
+- Coordinates with global planner for mission completion
 
 ## Troubleshooting
 
@@ -325,14 +371,25 @@ Reactive navigation planners that work without pre-built maps.
            │ /costmap
            ▼
 ┌─────────────────────────────────────────────────────────┐
+│              mission_manager                             │
+│  • Receives /waypoints (nav_msgs/Path)                   │
+│  • Sequential waypoint execution                         │
+│  • Task routing based on waypoint names                  │
+└────────────────────┬────────────────────────────────────┘
+                     │ /goal_pose
+                     ▼
+┌─────────────────────────────────────────────────────────┐
 │              nav_stack                                   │
 │  • Costmap Global Planner (path planning)                │
 │  • Costmap Local Planner (obstacle avoidance)            │
-│  • Goal Management                                       │
+│  • Waypoint type routing on goal reach                   │
 └────────────────────┬────────────────────────────────────┘
-                     │ /cmd_vel
-                     ▼
-              [Robot Control]
+        ┌────────────┼────────────────────────┐
+        │            │                        │
+        ▼            ▼                        ▼
+   /cmd_vel    /waypoint_reached      /aruco, /mallet,
+  [Robot]     [Mission Manager]       /bottle, /rock_pick
+                                      [Task Subsystems]
 ```
 
 ## License
@@ -345,6 +402,7 @@ For detailed information about specific packages, refer to:
 - [mt_unity_sim/README.md](src/mt_unity_sim/README.md) - Unity integration details
 - [nav2_costmap_node/README.md](src/nav2_costmap_node/README.md) - Costmap architecture and ray tracing
 - [nav_stack/COSTMAP_ONLY_README.md](src/nav_stack/COSTMAP_ONLY_README.md) - Costmap-only navigation details
+- [mission_manager/README.md](src/mission_manager/README.md) - Sequential waypoint mission management
 
 ## Contributing
 

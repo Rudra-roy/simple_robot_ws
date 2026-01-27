@@ -1,0 +1,4 @@
+# Mission Manager Configuration
+mission_manager:
+  ros__parameters:
+    use_sim_time: false

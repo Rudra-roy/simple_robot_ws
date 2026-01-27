@@ -17,6 +17,14 @@ import math
 import struct
 
 
+# Waypoint type keywords for routing
+WAYPOINT_TYPE_GNSS = 'GNSS'
+WAYPOINT_TYPE_ARUCO = 'Aruco'
+WAYPOINT_TYPE_MALLET = 'Mallet'
+WAYPOINT_TYPE_BOTTLE = 'Bottle'
+WAYPOINT_TYPE_ROCK_PICK = 'Rock Pick'
+
+
 class CostmapGlobalPlannerNode(Node):
     def __init__(self):
         super().__init__('costmap_global_planner_node')
@@ -24,7 +32,7 @@ class CostmapGlobalPlannerNode(Node):
         # Parameters
         self.declare_parameter('robot_radius', 0.6)
         self.declare_parameter('safety_margin', 0.2)
-        self.declare_parameter('linear_velocity', 1.2)
+        self.declare_parameter('linear_velocity', 2.2)
         self.declare_parameter('angular_velocity', 4.0)
         self.declare_parameter('goal_tolerance', 0.5)
         self.declare_parameter('angular_tolerance', 0.15)
@@ -49,6 +57,7 @@ class CostmapGlobalPlannerNode(Node):
         self.robot_stopped = False
         self.planner_state = "ACTIVE"
         self.last_instruction_time = None
+        self.current_waypoint_name = ''  # Waypoint name from mission manager
         
         # Instruction printing
         self.last_instruction_time = None
@@ -136,6 +145,38 @@ class CostmapGlobalPlannerNode(Node):
             10
         )
         
+        # Waypoint-specific publishers for mission manager coordination
+        self.waypoint_reached_pub = self.create_publisher(
+            Bool,
+            '/waypoint_reached',
+            10
+        )
+        
+        # Task-specific continue signal publishers
+        self.aruco_continue_pub = self.create_publisher(
+            String,
+            '/aruco',
+            10
+        )
+        
+        self.mallet_continue_pub = self.create_publisher(
+            String,
+            '/mallet',
+            10
+        )
+        
+        self.bottle_continue_pub = self.create_publisher(
+            String,
+            '/bottle',
+            10
+        )
+        
+        self.rock_pick_continue_pub = self.create_publisher(
+            String,
+            '/rock_pick',
+            10
+        )
+        
         # Listen to state changes
         self.create_subscription(
             String,
@@ -161,7 +202,13 @@ class CostmapGlobalPlannerNode(Node):
         self.planner_state = "ACTIVE"
         self.last_instruction_time = None
         
-        self.get_logger().info(f'New goal: x={msg.pose.position.x:.2f}, y={msg.pose.position.y:.2f}')
+        # Extract waypoint name from frame_id (sent by mission manager)
+        self.current_waypoint_name = msg.header.frame_id if msg.header.frame_id else ''
+        
+        if self.current_waypoint_name:
+            self.get_logger().info(f'New goal: "{self.current_waypoint_name}" at x={msg.pose.position.x:.2f}, y={msg.pose.position.y:.2f}')
+        else:
+            self.get_logger().info(f'New goal: x={msg.pose.position.x:.2f}, y={msg.pose.position.y:.2f}')
         self.publish_goal_marker()
         
         # Print initial instruction immediately
@@ -320,6 +367,65 @@ class CostmapGlobalPlannerNode(Node):
         cmd.angular.z = 0.0
         self.cmd_vel_pub.publish(cmd)
     
+    def handle_waypoint_reached(self):
+        """
+        Handle waypoint completion based on waypoint type.
+        Routes to appropriate subsystem or sends confirmation to mission manager.
+        
+        Waypoint type keywords:
+            - GNSS: Send confirmation to mission manager for next waypoint
+            - Aruco: Send 'continue' to /aruco topic
+            - Mallet: Send 'continue' to /mallet topic
+            - Bottle: Send 'continue' to /bottle topic
+            - Rock Pick: Send 'continue' to /rock_pick topic
+        """
+        waypoint_name = self.current_waypoint_name
+        continue_msg = String()
+        continue_msg.data = 'continue'
+        
+        if WAYPOINT_TYPE_ROCK_PICK in waypoint_name:
+            # Rock Pick waypoint - send continue to rock pick subsystem
+            self.get_logger().info(f'Rock Pick waypoint reached: "{waypoint_name}"')
+            self.rock_pick_continue_pub.publish(continue_msg)
+            self.get_logger().info('Sent "continue" to /rock_pick')
+        
+        elif WAYPOINT_TYPE_ARUCO in waypoint_name:
+            # Aruco waypoint - send continue to aruco subsystem
+            self.get_logger().info(f'Aruco waypoint reached: "{waypoint_name}"')
+            self.aruco_continue_pub.publish(continue_msg)
+            self.get_logger().info('Sent "continue" to /aruco')
+        
+        elif WAYPOINT_TYPE_MALLET in waypoint_name:
+            # Mallet waypoint - send continue to mallet subsystem
+            self.get_logger().info(f'Mallet waypoint reached: "{waypoint_name}"')
+            self.mallet_continue_pub.publish(continue_msg)
+            self.get_logger().info('Sent "continue" to /mallet')
+        
+        elif WAYPOINT_TYPE_BOTTLE in waypoint_name:
+            # Bottle waypoint - send continue to bottle subsystem
+            self.get_logger().info(f'Bottle waypoint reached: "{waypoint_name}"')
+            self.bottle_continue_pub.publish(continue_msg)
+            self.get_logger().info('Sent "continue" to /bottle')
+        
+        elif WAYPOINT_TYPE_GNSS in waypoint_name:
+            # GNSS waypoint - send confirmation to mission manager
+            self.get_logger().info(f'GNSS waypoint reached: "{waypoint_name}"')
+            waypoint_reached_msg = Bool()
+            waypoint_reached_msg.data = True
+            self.waypoint_reached_pub.publish(waypoint_reached_msg)
+            self.get_logger().info('Sent confirmation to mission manager for next waypoint')
+        
+        else:
+            # Default: treat as GNSS (send confirmation to mission manager)
+            self.get_logger().info(f'Waypoint reached: "{waypoint_name}" (default GNSS behavior)')
+            waypoint_reached_msg = Bool()
+            waypoint_reached_msg.data = True
+            self.waypoint_reached_pub.publish(waypoint_reached_msg)
+            self.get_logger().info('Sent confirmation to mission manager for next waypoint')
+        
+        # Reset waypoint name
+        self.current_waypoint_name = ''
+    
     def print_movement_instruction(self):
         """Print movement instructions every 0.5 seconds"""
         if self.current_pose is None or self.goal_pose is None:
@@ -379,6 +485,9 @@ class CostmapGlobalPlannerNode(Node):
             msg = Bool()
             msg.data = True
             self.goal_reached_pub.publish(msg)
+            
+            # Handle waypoint type routing
+            self.handle_waypoint_reached()
             
             self.goal_pose = None
             return
