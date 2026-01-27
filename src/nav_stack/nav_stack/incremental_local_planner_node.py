@@ -32,13 +32,13 @@ class IncrementalLocalPlannerNode(Node):
         # Parameters
         self.declare_parameter('robot_radius', 0.6)
         self.declare_parameter('linear_velocity', 1.2)
-        self.declare_parameter('angular_velocity', 1.0)  # Slower for precise rotation steps
+        self.declare_parameter('angular_velocity', 3.0)  # Fast rotation for 20° increments
         self.declare_parameter('costmap_obstacle_threshold', 70)
-        self.declare_parameter('forward_duration', 2.0)
+        self.declare_parameter('forward_duration', 3.0)
         self.declare_parameter('obstacle_check_distance', 5.0)
         self.declare_parameter('rotation_increment', 20.0)  # degrees
         self.declare_parameter('max_rotation_angle', 120.0)  # degrees
-        self.declare_parameter('direction_scan_range', 120.0)  # -120 to +120 degrees
+        self.declare_parameter('direction_scan_range', 60.0)  # -60 to +60 degrees
         
         self.robot_radius = self.get_parameter('robot_radius').value
         self.linear_vel = self.get_parameter('linear_velocity').value
@@ -166,7 +166,7 @@ class IncrementalLocalPlannerNode(Node):
         self.create_timer(0.2, self.publish_visualizations)
         
         self.get_logger().info('Incremental Local Planner initialized')
-        self.get_logger().info('20° rotation increments, 2s forward, 120° limit')
+        self.get_logger().info('20° rotation increments, 3s forward, 120° limit')
     
     def trigger_callback(self, msg: Bool):
         """Triggered by global planner when obstacle detected"""
@@ -231,7 +231,7 @@ class IncrementalLocalPlannerNode(Node):
         
         elif self.state == PlannerState.MOVING_FORWARD:
             elapsed = (self.get_clock().now() - self.forward_timer_start).nanoseconds / 1e9 if self.forward_timer_start else 0
-            self.get_logger().info(f'Moving forward ({elapsed:.1f}s/2.0s)')
+            self.get_logger().info(f'Moving forward ({elapsed:.1f}s/3.0s)')
             self.last_instruction_time = current_time
         
         elif self.state == PlannerState.RETURNING_TO_START:
@@ -260,7 +260,7 @@ class IncrementalLocalPlannerNode(Node):
     
     def execute_analysis(self):
         """
-        Analyze -120° to +120° range from current heading.
+        Analyze -60° to +60° range from current heading.
         Choose direction with goal bias and free space.
         """
         if self.costmap is None:
@@ -272,7 +272,7 @@ class IncrementalLocalPlannerNode(Node):
         cmd = Twist()
         self.cmd_vel_pub.publish(cmd)
         
-        self.get_logger().info('STOPPED - Scanning -120° to +120° range')
+        self.get_logger().info('STOPPED - Scanning -60° to +60° range')
         
         # Find best direction
         turn_direction = self.find_best_direction()
@@ -291,7 +291,7 @@ class IncrementalLocalPlannerNode(Node):
     
     def find_best_direction(self):
         """
-        Scan from -120° to +120° relative to current heading.
+        Scan from -60° to +60° relative to current heading.
         Score each direction based on free space and goal alignment.
         Return "left" or "right" based on which side has better score.
         """
@@ -315,8 +315,8 @@ class IncrementalLocalPlannerNode(Node):
         goal_dy = goal_y - robot_y
         goal_angle = math.atan2(goal_dy, goal_dx)
         
-        # Scan from -120° to +120°
-        angle_samples = np.linspace(-self.scan_range, self.scan_range, 25)
+        # Scan from -60° to +60°
+        angle_samples = np.linspace(-self.scan_range, self.scan_range, 120)
         
         left_score = 0.0
         right_score = 0.0
@@ -410,15 +410,14 @@ class IncrementalLocalPlannerNode(Node):
         # Calculate how much we've rotated from start
         rotated_angle = abs(self.normalize_angle(current_yaw - self.rotation_start_yaw))
         
-        # Calculate expected time for 20° rotation with large safety margin
-        # At 3.0 rad/s, 20° = 0.349 rad takes 0.116s, but need buffer for acceleration
-        expected_time = (self.rotation_increment / self.angular_vel) * 3.0  # 3x safety margin
+        # Fixed timeout for real robot with acceleration limits
+        # Give robot 3 seconds to complete 20° rotation (plenty of time for accel/decel)
         elapsed_time = (self.get_clock().now() - self.rotation_start_time).nanoseconds / 1e9
         
-        # Primary check: angle achieved (with some tolerance for overshoot)
-        # Secondary check: timeout protection (3x expected time)
-        angle_achieved = rotated_angle >= self.rotation_increment * 0.85  # 85% of target
-        timeout = elapsed_time > expected_time
+        # Primary check: angle achieved (16° out of 20° = 80%)
+        # Secondary check: fixed 3-second timeout for robot dynamics
+        angle_achieved = rotated_angle >= self.rotation_increment * 0.80  # 80% of target (16° out of 20°)
+        timeout = elapsed_time > 3.0  # Fixed 3-second timeout
         
         # Only stop if angle is achieved OR we've exceeded safety timeout
         if angle_achieved or timeout:
@@ -433,7 +432,7 @@ class IncrementalLocalPlannerNode(Node):
             
             # Check if path ahead is clear
             if self.check_path_clear():
-                self.get_logger().info('Path clear - moving forward for 2s')
+                self.get_logger().info('Path clear - moving forward for 3s')
                 self.forward_timer_start = self.get_clock().now()
                 self.state = PlannerState.MOVING_FORWARD
                 return
@@ -522,7 +521,7 @@ class IncrementalLocalPlannerNode(Node):
     
     def execute_forward_movement(self):
         """
-        Move forward for 2 seconds.
+        Move forward for 3 seconds.
         Check for obstacles during movement.
         When complete, return to global planner.
         """
@@ -535,11 +534,11 @@ class IncrementalLocalPlannerNode(Node):
             self.state = PlannerState.ANALYZING
             return
         
-        # Check if 2 seconds elapsed
+        # Check if 3 seconds elapsed
         elapsed = (self.get_clock().now() - self.forward_timer_start).nanoseconds / 1e9
         
         if elapsed >= self.forward_duration:
-            self.get_logger().info('2 seconds completed - returning to global planner')
+            self.get_logger().info('3 seconds completed - returning to global planner')
             self.signal_global_planner()
             return
         

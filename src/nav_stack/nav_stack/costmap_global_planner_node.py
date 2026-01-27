@@ -444,7 +444,7 @@ class CostmapGlobalPlannerNode(Node):
         try:
             # Generate circle of points at 0.3m radius
             num_points = 360  # Dense circle (every 1 degree)
-            radius = 0.3  # 0.3m radius
+            radius = 0.7  # 0.7m radius
             
             # Get robot's current position
             robot_x = self.current_pose.position.x

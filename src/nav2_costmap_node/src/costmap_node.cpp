@@ -46,10 +46,10 @@ public:
     this->declare_parameter("cost_scaling_factor", 10.0);
     this->declare_parameter("track_unknown_space", true);
     this->declare_parameter("use_static_map", false);
-    this->declare_parameter("obstacle_max_range", 10.0);    // was 5.0
-    this->declare_parameter("obstacle_min_range", 0.10);
+    this->declare_parameter("obstacle_max_range", 20.0);    // was 5.0
+    this->declare_parameter("obstacle_min_range", 0.8);
     this->declare_parameter("min_obstacle_z", 0.25);        // Ground filter: must be above 25cm
-    this->declare_parameter("max_obstacle_z", 2.00);        // Max height: 2m ceiling
+    this->declare_parameter("max_obstacle_z", 4.00);        // Max height: 2m ceiling
     this->declare_parameter("max_traversable_slope", 20.0);  // Max slope in degrees for traversability
     this->declare_parameter("point_cloud_topic", std::string("/depth_points"));
     this->declare_parameter("costmap_topic",     std::string("/costmap"));
