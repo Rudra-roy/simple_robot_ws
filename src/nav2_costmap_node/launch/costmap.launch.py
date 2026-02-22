@@ -5,8 +5,8 @@ from launch_ros.actions import Node
 def generate_launch_description():
     params = {
         'global_frame_id': 'odom',
-        'base_frame_id': 'base_link',
-        'point_cloud_topic': '/depth_points',
+        'base_frame_id': 'zed_camera_link',
+        'point_cloud_topic': '/zed/zed_node/point_cloud/cloud_registered',
         'costmap_topic': '/costmap',
         'publish_frequency': 30.0,
         'resolution': 0.05,

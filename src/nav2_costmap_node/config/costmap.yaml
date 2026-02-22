@@ -3,7 +3,7 @@ costmap:
     ros__parameters:
       # Frame settings
       global_frame_id: odom
-      base_frame_id: base_link
+      base_frame_id: zed_camera_link
       
       # Update frequencies
       update_frequency: 50.0     # Process point clouds at 50Hz
@@ -16,26 +16,31 @@ costmap:
       origin_x: 0.0
       origin_y: 0.0
       
+      # Costmap Z position (set to negative camera height to place at ground)
+      # Adjust this value to match your camera height above ground
+      costmap_origin_z: 0.0
+      
       # Layer settings
       use_static_map: false
       track_unknown_space: true
       
       # Point cloud topic
-      point_cloud_topic: /depth_points
+      point_cloud_topic: /zed/zed_node/point_cloud/cloud_registered
       costmap_topic: /costmap
       static_map_topic: /map
       
       # Obstacle layer configuration
       obstacle_max_range: 20.0   # Max sensor range
-      obstacle_min_range: 0.8    # Min sensor range (filter out robot body)
+      obstacle_min_range: 0.3    # Min sensor range (reduced for earlier detection)
       
-      # Ground filtering (CRITICAL for depth cameras)
-      min_obstacle_z: 0.35       # Ignore ground: points below 35cm above base_link
-      max_obstacle_z: 4.0        # Ignore ceiling: points above 4m
+      # Ground filtering (relative to zed_camera_link)
+      # Camera is ~0.83m above ground, so ground is at z = -0.83
+      min_obstacle_z: -0.78     # 5cm above ground in camera frame (-0.83 + 0.05)
+      max_obstacle_z: 0.17      # 1m above ground in camera frame (-0.83 + 1.0)
       
       # Slope-based traversability (NEW)
       max_traversable_slope: 20.0  # Max slope in degrees (points < 20° are traversable)
       
       # Inflation layer configuration
-      inflation_radius: 0.3
+      inflation_radius: 1.0      # Increased for earlier obstacle detection
       cost_scaling_factor: 5.0

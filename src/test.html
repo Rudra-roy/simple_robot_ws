@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <img id="video" />
+    <script>
+        const ws = new WebSocket('ws://localhost:8000');
+        ws.onmessage = (event) => {
+            document.getElementById('video').src = 'data:image/jpeg;base64,' + event.data;
+        };
+    </script>
+</body>
+</html>

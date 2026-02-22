@@ -1,0 +1,13 @@
+# Mission Coordinator Node Parameters
+
+/**:
+  ros__parameters:
+    # Mission file path (YAML)
+    mission_file: ""  # Will be set via launch argument
+    
+    # Timing parameters
+    goal_reached_delay: 10.0  # Seconds to wait after reaching goal before starting task
+    task_timeout: 120.0  # Maximum time for detection task (seconds)
+    
+    # Auto-start mission on node startup
+    auto_start: false

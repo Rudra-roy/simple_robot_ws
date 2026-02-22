@@ -72,7 +72,12 @@ This is an alternative navigation system that **does NOT require a static `/map`
   - `/costmap_local_planner_trigger` (Bool) - Trigger local planner
   - `/costmap_planner_state` (String) - Current planner state
   - `/goal_reached` (Bool) - Goal achievement signal
-  - `/goal_marker` (Marker) - Goal visualization
+  
+  **Visualization Topics:**
+  - `/costmap_global/robot_boundary_cloud` (PointCloud2) - Robot footprint
+  - `/costmap_global/planned_path_marker` (Marker) - Path line to goal
+  - `/costmap_global/obstacle_check_zone` (Marker) - Detection ray
+  - `/costmap_global/goal_marker` (Marker) - Goal sphere
 
 **Parameters:**
 - `robot_radius`: 0.6m - Robot footprint radius
@@ -248,9 +253,26 @@ ros2 topic echo /goal_reached
 ```
 
 ### Visualize in RViz:
+
+**Basic Displays:**
 - Add `/costmap` - OccupancyGrid
-- Add `/goal_marker` - Marker
 - Add `/odom` - Odometry
+
+**Global Planner Visualizations:**
+- Add `/costmap_global/robot_boundary_cloud` - PointCloud2 (robot footprint circle)
+- Add `/costmap_global/planned_path_marker` - Marker (path line to goal)
+- Add `/costmap_global/obstacle_check_zone` - Marker (4m detection ray)
+- Add `/costmap_global/goal_marker` - Marker (green goal sphere)
+
+**Local Planner Visualizations:**
+- Add `/incremental_local/scan_directions` - Marker (25 scan rays)
+- Add `/incremental_local/chosen_direction` - Marker (blue/orange turn arrow)
+- Add `/incremental_local/rotation_progress` - Marker (rotation arc)
+- Add `/incremental_local/forward_path_preview` - Marker (predicted trajectory)
+- Add `/incremental_local/starting_position` - Marker (yellow trigger disk)
+- Add `/incremental_local/goal_bias_arrow` - Marker (magenta goal direction)
+
+Set **Fixed Frame** to `odom` for all displays.
 
 ## Comparison Example
 

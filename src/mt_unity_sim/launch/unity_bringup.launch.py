@@ -14,7 +14,7 @@ def generate_launch_description():
     # Declare launch arguments
     xacro_file_arg = DeclareLaunchArgument(
         'xacro_file',
-        default_value='/home/mt-labpc/simple_robot_ws/src/uirover_description/urdf/uirover_sim.urdf.xacro',
+        default_value='/home/demos/simple_robot_ws/src/uirover_description/urdf/uirover_sim.urdf.xacro',
         description='Path to the robot URDF/xacro file',
     )
     
@@ -39,15 +39,15 @@ def generate_launch_description():
     robot_description_content = Command(['xacro ', xacro_file])
     
     # 1. Include ROS TCP Endpoint launch file
-    ros_tcp_endpoint_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([
-                FindPackageShare('ros_tcp_endpoint'),
-                'launch',
-                'endpoint.py'
-            ])
-        ])
-    )
+    # ros_tcp_endpoint_launch = IncludeLaunchDescription(
+    #     PythonLaunchDescriptionSource([
+    #         PathJoinSubstitution([
+    #             FindPackageShare('ros_tcp_endpoint'),
+    #             'launch',
+    #             'endpoint.py'
+    #         ])
+    #     ])
+    # )
     
     # 2. Robot State Publisher
     robot_state_publisher = Node(
@@ -61,22 +61,7 @@ def generate_launch_description():
         }]
     )
     
-    # 3. Static Transform Publisher: camera_link -> camera_optical_frame
-    # Standard optical frame convention: X=right, Y=down, Z=forward
-    static_tf_publisher = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='camera_optical_frame_publisher',
-        arguments=[
-            '0', '0', '0',  # x, y, z
-            '-1.5708', '0', '-1.5708',  # roll, pitch, yaw (90° rotations)
-            'camera_link',
-            'camera_optical_frame'
-        ],
-        output='screen'
-    )
-    
-    # 4. Point Cloud Transform Node
+    # 3. Point Cloud Transform Node
     # pointcloud_transform_node = Node(
     #     package='mt_unity_sim',
     #     executable='pointcloud_transform_node',
@@ -96,8 +81,7 @@ def generate_launch_description():
         # output_topic_arg,
         
         # Nodes and launch files
-        ros_tcp_endpoint_launch,
+        # ros_tcp_endpoint_launch,
         robot_state_publisher,
-        static_tf_publisher,
         # pointcloud_transform_node,
     ])

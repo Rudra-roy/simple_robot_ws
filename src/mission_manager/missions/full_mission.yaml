@@ -1,0 +1,41 @@
+# Full Mission with Detection Tasks
+# Structured format with task types and tolerances
+
+mission_name: "Campus Survey with Object Detection"
+
+waypoints:
+  # Waypoint 1: Pure navigation
+  - lat: 40.712776
+    lon: -74.005974
+    task_type: null
+    tolerance: 1.0
+  
+  # Waypoint 2: ArUco marker search after reaching
+  - lat: 40.712800
+    lon: -74.005900
+    task_type: "aruco"
+    tolerance: 1.5
+  
+  # Waypoint 3: Pure navigation
+  - lat: 40.712850
+    lon: -74.005850
+    task_type: null
+    tolerance: 1.0
+  
+  # Waypoint 4: Mallet detection
+  - lat: 40.712900
+    lon: -74.005800
+    task_type: "mallet"
+    tolerance: 2.0
+  
+  # Waypoint 5: Bottle detection
+  - lat: 40.712950
+    lon: -74.005750
+    task_type: "bottle"
+    tolerance: 2.0
+  
+  # Waypoint 6: Return to start
+  - lat: 40.712776
+    lon: -74.005974
+    task_type: null
+    tolerance: 1.0

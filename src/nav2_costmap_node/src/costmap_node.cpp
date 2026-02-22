@@ -46,11 +46,12 @@ public:
     this->declare_parameter("cost_scaling_factor", 10.0);
     this->declare_parameter("track_unknown_space", true);
     this->declare_parameter("use_static_map", false);
-    this->declare_parameter("obstacle_max_range", 10.0);    // was 5.0
-    this->declare_parameter("obstacle_min_range", 0.10);
-    this->declare_parameter("min_obstacle_z", 0.25);        // Ground filter: must be above 25cm
-    this->declare_parameter("max_obstacle_z", 2.00);        // Max height: 2m ceiling
+    this->declare_parameter("obstacle_max_range", 20.0);    // was 5.0
+    this->declare_parameter("obstacle_min_range", 0.8);
+    this->declare_parameter("min_obstacle_z", -0.3);        // Ground filter: must be above 25cm
+    this->declare_parameter("max_obstacle_z", 1.0);        // Max height: 2m ceiling
     this->declare_parameter("max_traversable_slope", 20.0);  // Max slope in degrees for traversability
+    this->declare_parameter("costmap_origin_z", -0.7);         // Z offset for costmap (set to -camera_height to place at ground)
     this->declare_parameter("point_cloud_topic", std::string("/depth_points"));
     this->declare_parameter("costmap_topic",     std::string("/costmap"));
     this->declare_parameter("static_map_topic",  std::string("/map"));
@@ -73,6 +74,7 @@ public:
     min_obstacle_z_        = this->get_parameter("min_obstacle_z").as_double();
     max_obstacle_z_        = this->get_parameter("max_obstacle_z").as_double();
     max_traversable_slope_ = this->get_parameter("max_traversable_slope").as_double();
+    costmap_origin_z_      = this->get_parameter("costmap_origin_z").as_double();
 
     double publish_freq    = this->get_parameter("publish_frequency").as_double();
     std::string pc_topic   = this->get_parameter("point_cloud_topic").as_string();
@@ -129,11 +131,11 @@ private:
   void point_cloud_callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
   {
     // Transform cloud frame -> base_link (for z-filtering)
-    // Use the point cloud timestamp for ALL transforms
+    // Use latest available transform to avoid extrapolation errors
     geometry_msgs::msg::TransformStamped tf_cloud_to_base;
     try {
       tf_cloud_to_base = tf_buffer_->lookupTransform(
-        robot_frame_, msg->header.frame_id, msg->header.stamp, tf2::durationFromSec(0.1));
+        robot_frame_, msg->header.frame_id, tf2::TimePointZero);
     } catch (tf2::TransformException &ex) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
                            "TF (cloud->%s): %s", robot_frame_.c_str(), ex.what());
@@ -144,16 +146,16 @@ private:
     geometry_msgs::msg::TransformStamped tf_cloud_to_global;
     try {
       tf_cloud_to_global = tf_buffer_->lookupTransform(
-        global_frame_, msg->header.frame_id, msg->header.stamp, tf2::durationFromSec(0.1));
+        global_frame_, msg->header.frame_id, tf2::TimePointZero);
     } catch (tf2::TransformException &ex) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
                            "TF (cloud->%s): %s", global_frame_.c_str(), ex.what());
       return;
     }
 
-    // Get robot pose at the SAME timestamp as the point cloud
+    // Get robot pose using latest available transform
     try {
-      const auto tf = tf_buffer_->lookupTransform(global_frame_, robot_frame_, msg->header.stamp, tf2::durationFromSec(0.1));
+      const auto tf = tf_buffer_->lookupTransform(global_frame_, robot_frame_, tf2::TimePointZero);
       robot_x_ = tf.transform.translation.x;
       robot_y_ = tf.transform.translation.y;
     } catch (tf2::TransformException &ex) {
@@ -393,7 +395,7 @@ private:
     msg->info.height = height_;
     msg->info.origin.position.x = origin_x;
     msg->info.origin.position.y = origin_y;
-    msg->info.origin.position.z = 0.0;  // Costmap is at ground plane (z=0 in odom)
+    msg->info.origin.position.z = costmap_origin_z_;  // Offset to place costmap at ground level
     msg->info.origin.orientation.x = 0.0;
     msg->info.origin.orientation.y = 0.0;
     msg->info.origin.orientation.z = 0.0;
@@ -420,6 +422,7 @@ private:
   double min_obstacle_z_;
   double max_obstacle_z_;
   double max_traversable_slope_;  // Max traversable slope in degrees
+  double costmap_origin_z_;       // Z offset for costmap origin (to place at ground level)
 
   double robot_x_, robot_y_;
 

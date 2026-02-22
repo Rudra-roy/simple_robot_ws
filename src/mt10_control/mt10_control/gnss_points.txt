@@ -1,0 +1,8 @@
+<TargetName>,<Latitude>,<Longitude> # make sure it there is nothing else on the line and is seperated by commas. Also make sure to not create empty lines
+GNSS,38.41928851,-110.7831721
+GNSS,38.41957183,-110.7833951
+AR,38.41995429,-110.783921
+AR,38.41965712,-110.7843735
+AR,38.4197353,-110.7846851
+MALLET,38.4191216,-110.7848854
+BOTTLE,38.41836369,-110.7847874

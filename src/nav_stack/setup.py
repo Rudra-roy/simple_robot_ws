@@ -34,6 +34,7 @@ setup(
             'costmap_global_planner_node = nav_stack.costmap_global_planner_node:main',
             'costmap_local_planner_node = nav_stack.costmap_local_planner_node:main',
             'incremental_local_planner_node = nav_stack.incremental_local_planner_node:main',
+            'odom_yaw_fusion_node = nav_stack.odom_yaw_fusion_node:main',
         ],
     },
 )

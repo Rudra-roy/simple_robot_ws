@@ -1,0 +1,30 @@
+# Bottle Detection Node Parameters
+
+/**:
+  ros__parameters:
+    # YOLO model path (absolute or package:// URI)
+    model_path: "/home/demos/simple_robot_ws/src/mt10_control/mt10_control/bottle.pt"
+    
+    # Camera configuration
+    camera_device: 0  # Camera index
+    
+    # Object-specific parameters
+    reference_height: 0.30  # Bottle height in meters
+    focal_length: 775  # Camera focal length in pixels
+    
+    # Movement parameters
+    linear_speed: 90.0  # Forward speed
+    angular_speed: 60.0  # Rotation speed
+    stop_distance: 1.5  # Stop when within this distance (meters)
+    tracking_timeout: 1.5  # Timeout for tracking loss (seconds)
+    rotation_increment: 60.0  # Rotation step size (degrees)
+    
+    # Detection parameters
+    confidence_threshold: 0.65  # Minimum YOLO confidence
+    
+    # Visual servo parameters
+    rect_width: 300  # Target rectangle width (pixels)
+    rect_height: 180  # Target rectangle height (pixels)
+    
+    # WebSocket streaming
+    websocket_port: 8001  # Port for video streaming

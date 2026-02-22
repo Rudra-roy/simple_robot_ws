@@ -1,0 +1,27 @@
+# ArUco Detection Node Parameters
+
+/**:
+  ros__parameters:
+    # Camera configuration
+    camera_device: 0  # Camera index or path (e.g., "/dev/v4l/by-id/...")
+    
+    # ArUco marker configuration
+    marker_size: 0.15  # Marker size in meters
+    aruco_dict: "4x4_50"  # ArUco dictionary type
+    
+    # Movement parameters
+    linear_speed: 80.0  # Forward speed
+    angular_speed: 60.0  # Rotation speed
+    stop_distance: 1.5  # Stop when within this distance (meters)
+    tracking_timeout: 1.5  # Timeout for tracking loss (seconds)
+    rotation_increment: 50.0  # Rotation step size (degrees)
+    
+    # Camera calibration
+    focal_length: 941  # Camera focal length in pixels (Logitech C920)
+    
+    # Visual servo parameters
+    rect_width: 300  # Target rectangle width (pixels)
+    rect_height: 180  # Target rectangle height (pixels)
+    
+    # WebSocket streaming
+    websocket_port: 8000  # Port for video streaming

@@ -24,14 +24,14 @@ class GlobalPlannerNode(Node):
         super().__init__('global_planner_node')
         
         # Parameters
-        self.declare_parameter('robot_radius', 0.6)  # meters
+        self.declare_parameter('robot_radius', 0.3)  # meters
         self.declare_parameter('safety_margin', 0.2)  # meters
         self.declare_parameter('linear_velocity', 0.5)  # m/s
         self.declare_parameter('angular_velocity', 0.5)  # rad/s
-        self.declare_parameter('goal_tolerance', 0.5)  # meters
-        self.declare_parameter('angular_tolerance', 0.15)  # radians
+        self.declare_parameter('goal_tolerance', 0.1)  # meters
+        self.declare_parameter('angular_tolerance', 0.1)  # radians
         self.declare_parameter('obstacle_check_distance', 4.0)  # meters
-        self.declare_parameter('costmap_obstacle_threshold', 70)  # 0-100
+        self.declare_parameter('costmap_obstacle_threshold', 50)  # 0-100
         
         self.robot_radius = self.get_parameter('robot_radius').value
         self.safety_margin = self.get_parameter('safety_margin').value
@@ -81,7 +81,7 @@ class GlobalPlannerNode(Node):
         
         self.odom_sub = self.create_subscription(
             Odometry,
-            '/odom',
+            '/odometry/filtered',
             self.odom_callback,
             qos_best_effort
         )
@@ -159,7 +159,7 @@ class GlobalPlannerNode(Node):
         self.robot_stopped = False
         self.planner_state = "ACTIVE"
         
-        self.get_logger().info(f'New goal: x={msg.pose.position.x:.2f}, y={msg.pose.position.y:.2f}')
+        self.get_logger().info(f'🎯 New goal: x={msg.pose.position.x:.2f}, y={msg.pose.position.y:.2f}')
         
         # Immediately publish path visualization
         self.publish_path_to_goal()
@@ -176,7 +176,7 @@ class GlobalPlannerNode(Node):
     def odom_callback(self, msg: Odometry):
         """Update current robot pose from odometry"""
         if self.current_pose is None:
-            self.get_logger().info(f'Odometry received: x={msg.pose.pose.position.x:.2f}, y={msg.pose.pose.position.y:.2f}')
+            self.get_logger().info(f'✓ Odometry received: x={msg.pose.pose.position.x:.2f}, y={msg.pose.pose.position.y:.2f}')
         self.current_pose = msg.pose.pose
     
     def costmap_callback(self, msg: OccupancyGrid):
@@ -318,7 +318,7 @@ class GlobalPlannerNode(Node):
         # Check if goal reached
         if distance < self.goal_tolerance:
             self.stop_robot()
-            self.get_logger().info('Goal reached!')
+            self.get_logger().info('✅ Goal reached!')
             
             # Publish goal reached signal
             msg = Bool()
@@ -335,7 +335,7 @@ class GlobalPlannerNode(Node):
         if obstacle_in_path:
             if self.planner_state == "ACTIVE":
                 self.stop_robot()
-                self.get_logger().warn('Obstacle in path - triggering local planner')
+                self.get_logger().warn('⚠️ Obstacle in path - triggering local planner')
                 
                 # Trigger local planner
                 trigger_msg = Bool()
@@ -363,7 +363,7 @@ class GlobalPlannerNode(Node):
             angle_deg = abs(math.degrees(angle_to_goal))
             direction = "right" if angle_to_goal > 0 else "left"
             self.get_logger().info(
-                f'Rotating {angle_deg:.1f}° {direction}',
+                f'🔄 Rotating {angle_deg:.1f}° {direction}',
                 throttle_duration_sec=1.0
             )
         else:
@@ -371,7 +371,7 @@ class GlobalPlannerNode(Node):
             cmd.linear.x = self.linear_vel
             cmd.angular.z = 0.0
             self.get_logger().info(
-                f'Moving forward - {distance:.2f}m remaining',
+                f'➡️ Moving forward - {distance:.2f}m remaining',
                 throttle_duration_sec=1.0
             )
         
@@ -380,7 +380,7 @@ class GlobalPlannerNode(Node):
     def publish_visualizations(self):
         """Publish all visualizations"""
         if self.current_pose is None:
-            self.get_logger().warn('No odometry for visualization', throttle_duration_sec=5.0)
+            self.get_logger().warn('⚠️ No odometry for visualization', throttle_duration_sec=5.0)
         self.publish_robot_boundary()
         if self.goal_pose is not None:
             self.publish_path_to_goal()
@@ -443,7 +443,7 @@ class GlobalPlannerNode(Node):
             
             self.robot_boundary_pub.publish(cloud_msg)
         except Exception as e:
-            self.get_logger().error(f'Failed to publish boundary cloud: {e}')
+            self.get_logger().error(f'❌ Failed to publish boundary cloud: {e}')
     
     def publish_path_to_goal(self):
         """Publish line strip showing path from robot to goal"""

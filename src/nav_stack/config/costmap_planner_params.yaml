@@ -5,7 +5,7 @@
     safety_margin: 0.2         # Additional safety margin
     
     # Velocity parameters
-    linear_velocity: 1.2       # Global planner linear velocity (m/s)
+    linear_velocity: 2.2      # Global planner linear velocity (m/s)
     angular_velocity: 4.0      # Global planner angular velocity (rad/s)
     
     # Goal tolerances
@@ -25,7 +25,7 @@ costmap_global_planner_node:
   ros__parameters:
     robot_radius: 0.6
     safety_margin: 0.2
-    linear_velocity: 0.7
+    linear_velocity: 2.2
     angular_velocity: 4.0
     goal_tolerance: 0.5
     angular_tolerance: 0.15
@@ -35,7 +35,7 @@ costmap_global_planner_node:
 costmap_local_planner_node:
   ros__parameters:
     robot_radius: 0.6
-    linear_velocity: 1.2               # Slower for obstacle avoidance
+    linear_velocity: 2.2               # Slower for obstacle avoidance
     angular_velocity: 4.0
     costmap_obstacle_threshold: 70
     min_free_distance: 1.0

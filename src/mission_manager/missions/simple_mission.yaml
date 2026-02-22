@@ -1,0 +1,15 @@
+# Simple Mission - Pure Navigation
+# Format: Simple list of waypoints with lat/lon only
+
+waypoints:
+  - lat: 40.712776
+    lon: -74.005974
+  
+  - lat: 40.712800
+    lon: -74.005900
+  
+  - lat: 40.712850
+    lon: -74.005850
+  
+  - lat: 40.712900
+    lon: -74.005800

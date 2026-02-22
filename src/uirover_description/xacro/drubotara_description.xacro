@@ -108,7 +108,7 @@
   </collision>
 </link>
 
-<link name="camera_link">
+<link name="zed2i_base_link">
   <inertial>
     <origin xyz="-0.0038644930255475884 -0.00046519988354149487 0.014942744960595" rpy="0 0 0"/>
     <mass value="1.3266544034835752"/>
@@ -128,6 +128,16 @@
     </geometry>
   </collision>
 </link>
+
+<link name="zed2i_camera_center"/>
+
+<link name="zed2i_left_camera_frame"/>
+
+<link name="zed2i_left_camera_optical_frame"/>
+
+<link name="zed2i_right_camera_frame"/>
+
+<link name="zed2i_right_camera_optical_frame"/>
 
 <link name="imu_link">
   <inertial>
@@ -242,10 +252,40 @@
   <axis xyz="0 1 0"/>
 </joint>
 
-<joint name="camera_joint" type="fixed">
+<joint name="zed2i_base_joint" type="fixed">
   <origin xyz="0.4775 -0.001498 0.537" rpy="0 0 0"/>
   <parent link="base_link"/>
-  <child link="camera_link"/>
+  <child link="zed2i_base_link"/>
+</joint>
+
+<joint name="zed2i_camera_center_joint" type="fixed">
+  <origin xyz="0.0 0.0 0.0" rpy="0 0 0"/>
+  <parent link="zed2i_base_link"/>
+  <child link="zed2i_camera_center"/>
+</joint>
+
+<joint name="zed2i_left_camera_joint" type="fixed">
+  <origin xyz="0.0 0.06 0.0" rpy="0 0 0"/>
+  <parent link="zed2i_camera_center"/>
+  <child link="zed2i_left_camera_frame"/>
+</joint>
+
+<joint name="zed2i_left_camera_optical_joint" type="fixed">
+  <origin xyz="0.0 0.0 0.0" rpy="-1.5708 0.0 -1.5708"/>
+  <parent link="zed2i_left_camera_frame"/>
+  <child link="zed2i_left_camera_optical_frame"/>
+</joint>
+
+<joint name="zed2i_right_camera_joint" type="fixed">
+  <origin xyz="0.0 -0.06 0.0" rpy="0 0 0"/>
+  <parent link="zed2i_camera_center"/>
+  <child link="zed2i_right_camera_frame"/>
+</joint>
+
+<joint name="zed2i_right_camera_optical_joint" type="fixed">
+  <origin xyz="0.0 0.0 0.0" rpy="-1.5708 0.0 -1.5708"/>
+  <parent link="zed2i_right_camera_frame"/>
+  <child link="zed2i_right_camera_optical_frame"/>
 </joint>
 
 <joint name="imu_joint" type="fixed">

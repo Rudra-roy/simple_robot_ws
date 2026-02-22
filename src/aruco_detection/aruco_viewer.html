@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ArUco Detector Video Stream</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        #container {
+            max-width: 1280px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        #status {
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .connecting { background-color: #ffd700; color: #000; }
+        .connected { background-color: #4CAF50; color: white; }
+        .disconnected { background-color: #f44336; color: white; }
+        .error { background-color: #ff9800; color: white; }
+        
+        #video {
+            width: 100%;
+            height: auto;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            display: block;
+        }
+        #info {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .info-row {
+            margin: 5px 0;
+        }
+        .label {
+            font-weight: bold;
+            display: inline-block;
+            width: 150px;
+        }
+        button {
+            margin-top: 10px;
+            padding: 10px 20px;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #0b7dda;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <h1>ArUco Detector Video Stream</h1>
+        <div id="status" class="connecting">Connecting...</div>
+        <img id="video" alt="Video stream will appear here" />
+        <div id="info">
+            <div class="info-row"><span class="label">WebSocket URL:</span> <span id="wsurl"></span></div>
+            <div class="info-row"><span class="label">Connection Status:</span> <span id="connstatus">Not connected</span></div>
+            <div class="info-row"><span class="label">Frames Received:</span> <span id="framecount">0</span></div>
+            <div class="info-row"><span class="label">FPS:</span> <span id="fps">0</span></div>
+            <div class="info-row"><span class="label">Last Error:</span> <span id="error">None</span></div>
+        </div>
+        <button onclick="reconnect()">Reconnect</button>
+    </div>
+
+    <script>
+        let ws = null;
+        let frameCount = 0;
+        let lastFrameTime = Date.now();
+        let fpsHistory = [];
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 10;
+        
+        // Get WebSocket URL (you can change host/port here)
+        const wsHost = window.location.hostname || 'localhost';
+        const wsPort = 8000;
+        const wsUrl = `ws://${wsHost}:${wsPort}`;
+        document.getElementById('wsurl').textContent = wsUrl;
+        
+        function updateStatus(message, className) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = className;
+            document.getElementById('connstatus').textContent = message;
+        }
+        
+        function updateError(error) {
+            document.getElementById('error').textContent = error;
+        }
+        
+        function updateFPS() {
+            const now = Date.now();
+            const deltaTime = (now - lastFrameTime) / 1000;
+            if (deltaTime > 0) {
+                const currentFPS = 1 / deltaTime;
+                fpsHistory.push(currentFPS);
+                if (fpsHistory.length > 10) fpsHistory.shift();
+                
+                const avgFPS = fpsHistory.reduce((a, b) => a + b, 0) / fpsHistory.length;
+                document.getElementById('fps').textContent = avgFPS.toFixed(1);
+            }
+            lastFrameTime = now;
+        }
+        
+        function connect() {
+            try {
+                updateStatus('Connecting...', 'connecting');
+                updateError('None');
+                
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    console.log('WebSocket connected');
+                    updateStatus('Connected', 'connected');
+                    reconnectAttempts = 0;
+                };
+                
+                ws.onmessage = (event) => {
+                    try {
+                        document.getElementById('video').src = 'data:image/jpeg;base64,' + event.data;
+                        frameCount++;
+                        document.getElementById('framecount').textContent = frameCount;
+                        updateFPS();
+                    } catch (e) {
+                        console.error('Error processing frame:', e);
+                        updateError('Error processing frame: ' + e.message);
+                    }
+                };
+                
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    updateStatus('Error', 'error');
+                    updateError('WebSocket error occurred. Check console.');
+                };
+                
+                ws.onclose = (event) => {
+                    console.log('WebSocket closed:', event.code, event.reason);
+                    updateStatus('Disconnected', 'disconnected');
+                    updateError(`Connection closed (code: ${event.code})`);
+                    
+                    // Attempt to reconnect
+                    if (reconnectAttempts < maxReconnectAttempts) {
+                        reconnectAttempts++;
+                        const delay = Math.min(1000 * reconnectAttempts, 5000);
+                        console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})...`);
+                        updateError(`Reconnecting in ${delay/1000}s (attempt ${reconnectAttempts}/${maxReconnectAttempts})...`);
+                        setTimeout(connect, delay);
+                    } else {
+                        updateError('Max reconnection attempts reached. Click Reconnect button.');
+                    }
+                };
+                
+            } catch (e) {
+                console.error('Failed to create WebSocket:', e);
+                updateStatus('Connection Failed', 'error');
+                updateError('Failed to create WebSocket: ' + e.message);
+            }
+        }
+        
+        function reconnect() {
+            reconnectAttempts = 0;
+            frameCount = 0;
+            fpsHistory = [];
+            document.getElementById('framecount').textContent = '0';
+            document.getElementById('fps').textContent = '0';
+            if (ws) {
+                ws.close();
+            }
+            connect();
+        }
+        
+        // Start connection on page load
+        connect();
+    </script>
+</body>
+</html>

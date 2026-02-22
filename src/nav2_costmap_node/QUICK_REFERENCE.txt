@@ -1,0 +1,125 @@
+╔═══════════════════════════════════════════════════════════════════════╗
+║           COSTMAP DYNAMIC TUNING - QUICK REFERENCE                    ║
+╚═══════════════════════════════════════════════════════════════════════╝
+
+🚀 QUICK START
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  cd ~/simple_robot_ws
+  source install/setup.bash
+  ros2 launch nav2_costmap_node costmap_with_gui.launch.py
+
+  → This opens the GUI automatically!
+  → Select "/costmap_node" in the dropdown
+
+
+🎛️  KEY PARAMETERS TO TUNE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Parameter              Default    Range          What it does
+  ─────────────────────────────────────────────────────────────────────
+  min_obstacle_z         0.05m      0.0 - 1.0m    🔧 MOST IMPORTANT!
+                                                   Ground filter height
+                                                   ↑ if ground = obstacles
+                                                   
+  inflation_radius       0.3m       0.0 - 2.0m    Safety buffer
+                                                   ↓ for tighter nav
+                                                   ↑ for safety
+                                                   
+  publish_frequency      15 Hz      1 - 50 Hz     Update rate
+                                                   ↓ to reduce CPU
+                                                   
+  obstacle_max_range     10.0m      1 - 30m       Sensor range limit
+  
+  cost_scaling_factor    10.0       1 - 50        Cost gradient
+                                                   ↓ = gentler gradient
+
+
+🔧 COMMON PROBLEMS & SOLUTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ❌ Ground shows as red obstacles
+     ✅ Increase min_obstacle_z → try 0.1, 0.2, 0.3...
+     
+  ❌ Real obstacles not detected  
+     ✅ Decrease min_obstacle_z or increase max_obstacle_z
+     
+  ❌ Robot won't go through gaps
+     ✅ Decrease inflation_radius → try 0.2, 0.15
+     
+  ❌ Costmap lagging/slow
+     ✅ Decrease publish_frequency → try 10Hz or 5Hz
+     
+  ❌ Too many false obstacles
+     ✅ Increase min_obstacle_z
+     ✅ Decrease obstacle_max_range
+
+
+💻 COMMAND LINE QUICK COMMANDS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Check current value
+  ros2 param get /costmap_node min_obstacle_z
+  
+  # Set new value
+  ros2 param set /costmap_node min_obstacle_z 0.15
+  
+  # List all parameters
+  ros2 param list /costmap_node
+  
+  # Save current settings
+  ros2 param dump /costmap_node > my_params.yaml
+
+
+📊 DEBUGGING WORKFLOW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. Launch with GUI:
+     ros2 launch nav2_costmap_node costmap_with_gui.launch.py
+     
+  2. Open RViz and add:
+     - /costmap (OccupancyGrid)  
+     - /zed/zed_node/point_cloud/cloud_registered (PointCloud2)
+     
+  3. Adjust min_obstacle_z in GUI while watching RViz
+     
+  4. Fine-tune inflation_radius and other params
+     
+  5. Save optimal settings:
+     ros2 param dump /costmap_node > optimal_params.yaml
+
+
+🎯 OPTIMAL TUNING TIPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. START with min_obstacle_z - Get ground filtering right first!
+  
+  2. Then tune inflation_radius - Match your robot size + safety margin
+  
+  3. Adjust publish_frequency - Balance performance vs responsiveness
+  
+  4. Fine-tune cost_scaling_factor - For smoother/sharper planner behavior
+  
+  5. Save your settings - Use ros2 param dump when happy
+
+
+📁 IMPORTANT FILES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  launch/costmap_with_gui.launch.py  → Main launcher with GUI
+  launch_costmap_gui.sh               → Helper script
+  GROUND_PLANE_FIX.md                 → Full documentation
+  README_DYNAMIC_PARAMS.md            → Parameter details
+
+
+🎓 WHAT WAS FIXED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ✅ Costmap now in GLOBAL FRAME (odom/map) - consistent ground plane
+  ✅ Ground filter now DYNAMIC (was hardcoded 0.4m → now 0.05m default)
+  ✅ All critical params tunable LIVE via GUI
+  ✅ No restart needed - adjust and see results instantly!
+
+
+═══════════════════════════════════════════════════════════════════════════
+Need help? Check GROUND_PLANE_FIX.md or README_DYNAMIC_PARAMS.md
+═══════════════════════════════════════════════════════════════════════════

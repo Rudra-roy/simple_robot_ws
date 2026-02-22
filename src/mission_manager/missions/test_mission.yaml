@@ -1,0 +1,10 @@
+# Test Mission - Single Waypoint for Testing
+# Quick test with ArUco detection
+
+mission_name: "Single Waypoint Test"
+
+waypoints:
+  - lat: 40.712800
+    lon: -74.005900
+    task_type: "aruco"
+    tolerance: 1.5
